@@ -21,6 +21,7 @@ import {
 import { portfolioAPI, botAPI, tradesAPI } from '../services/api';
 import type { PortfolioSummary, BotStatus, TradingStats } from '../services/api';
 import ActivityFeed from '../components/ActivityFeed';
+import HistoricalChart from '../components/HistoricalChart';
 
 const Dashboard: React.FC = () => {
   const [portfolioSummary, setPortfolioSummary] = useState<PortfolioSummary | null>(null);
@@ -71,8 +72,8 @@ const Dashboard: React.FC = () => {
 
   useEffect(() => {
     fetchDashboardData();
-    // Refresh data every 30 seconds
-    const interval = setInterval(fetchDashboardData, 30000);
+    // Refresh data every minute (60000ms) for real-time updates
+    const interval = setInterval(fetchDashboardData, 60000);
     return () => clearInterval(interval);
   }, []);
 
@@ -277,6 +278,11 @@ const Dashboard: React.FC = () => {
               </Grid>
             </CardContent>
           </Card>
+        </Grid>
+
+        {/* Historical Chart - Full Width */}
+        <Grid item xs={12}>
+          <HistoricalChart />
         </Grid>
 
         {/* Activity Feed - Full Width */}

@@ -62,22 +62,43 @@ async def get_stock_history(
         if period not in valid_periods:
             raise HTTPException(status_code=400, detail=f"Invalid period. Must be one of: {', '.join(valid_periods)}")
         
-        historical_data = stock_service.get_historical_data(symbol, period)
+        historical_data = await stock_service.get_historical_data(symbol, period)
         
-        if historical_data is None or historical_data.empty:
+        if historical_data is None:
             raise HTTPException(status_code=404, detail=f"Historical data for {symbol} not found")
         
-        # Convert DataFrame to JSON-serializable format
+        # Handle both dict and DataFrame formats
         data = []
-        for index, row in historical_data.iterrows():
-            data.append({
-                "date": index.strftime("%Y-%m-%d"),
-                "open": float(row['Open']),
-                "high": float(row['High']),
-                "low": float(row['Low']),
-                "close": float(row['Close']),
-                "volume": int(row['Volume'])
-            })
+        if isinstance(historical_data, dict):
+            # AlphaVantage returns dict format
+            if 'data' in historical_data:
+                data = historical_data['data']
+            else:
+                # Convert dict format to expected format
+                for date_str, values in historical_data.items():
+                    if isinstance(values, dict):
+                        data.append({
+                            "date": date_str,
+                            "open": float(values.get('1. open', 0)),
+                            "high": float(values.get('2. high', 0)),
+                            "low": float(values.get('3. low', 0)),
+                            "close": float(values.get('4. close', 0)),
+                            "volume": int(values.get('5. volume', 0))
+                        })
+        else:
+            # DataFrame format
+            if hasattr(historical_data, 'empty') and historical_data.empty:
+                raise HTTPException(status_code=404, detail=f"Historical data for {symbol} not found")
+            
+            for index, row in historical_data.iterrows():
+                data.append({
+                    "date": index.strftime("%Y-%m-%d"),
+                    "open": float(row['Open']),
+                    "high": float(row['High']),
+                    "low": float(row['Low']),
+                    "close": float(row['Close']),
+                    "volume": int(row['Volume'])
+                })
         
         return {
             "symbol": symbol,

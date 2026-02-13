@@ -50,7 +50,7 @@ async def get_portfolio_summary(db: Session = Depends(get_db)):
 async def get_holdings(db: Session = Depends(get_db)):
     """Get all current stock holdings"""
     try:
-        holdings = portfolio_service.get_holdings(db)
+        holdings = await portfolio_service.get_holdings(db)
         return holdings
     except Exception as e:
         logger.error(f"Error getting holdings: {str(e)}")

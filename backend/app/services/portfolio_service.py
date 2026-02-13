@@ -90,15 +90,15 @@ class PortfolioService:
             logger.error(f"Error getting portfolio summary: {str(e)}")
             return None
     
-    def get_holdings(self, db: Session) -> List[HoldingResponse]:
+    async def get_holdings(self, db: Session) -> List[HoldingResponse]:
         """Get all current holdings with updated prices"""
         try:
             holdings = db.query(Holdings).all()
             result = []
             
             for holding in holdings:
-                # Update current price
-                current_price = stock_service.get_current_price(holding.symbol)
+                # Update current price using real-time data
+                current_price = await stock_service.get_current_price(holding.symbol)
                 if current_price:
                     holding.current_price = current_price
                     db.commit()
