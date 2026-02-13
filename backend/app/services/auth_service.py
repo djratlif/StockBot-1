@@ -47,9 +47,17 @@ class AuthService:
 
     def is_email_allowed(self, email: str) -> bool:
         """Check if email is in the allowed list"""
+        print(f"DEBUG: Checking email: '{email}'")
+        print(f"DEBUG: Allowed emails list: {settings.allowed_emails_list}")
+        print(f"DEBUG: Raw allowed_emails setting: '{settings.allowed_emails}'")
+        
         if not settings.allowed_emails_list:
+            print("DEBUG: No email restrictions, allowing all emails")
             return True  # If no restrictions, allow all emails
-        return email in settings.allowed_emails_list
+        
+        is_allowed = email in settings.allowed_emails_list
+        print(f"DEBUG: Email '{email}' is allowed: {is_allowed}")
+        return is_allowed
 
     def create_access_token(self, data: dict) -> str:
         """Create JWT access token"""
