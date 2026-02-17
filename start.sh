@@ -35,6 +35,13 @@ if ! command_exists npm; then
     exit 1
 fi
 
+if ! command_exists cloudflared; then
+    echo "⚠️  cloudflared is not installed. Cloudflare tunnel will not start."
+    HAS_CLOUDFLARED=false
+else
+    HAS_CLOUDFLARED=true
+fi
+
 echo "✅ Prerequisites check passed"
 
 # Setup backend
@@ -92,7 +99,33 @@ echo "================================"
 cleanup() {
     echo ""
     echo "🛑 Stopping servers..."
-    kill $BACKEND_PID $FRONTEND_PID 2>/dev/null
+    
+    # Kill background jobs
+    if [ -n "$BACKEND_PID" ]; then
+        echo "Stopping backend (PID: $BACKEND_PID)..."
+        # The reloader spawns child processes, so we need to kill the whole group or children
+        # First try killing children of the backend PID (the reloader)
+        pkill -P $BACKEND_PID 2>/dev/null
+        kill $BACKEND_PID 2>/dev/null
+    fi
+    
+    if [ -n "$FRONTEND_PID" ]; then
+        echo "Stopping frontend (PID: $FRONTEND_PID)..."
+        kill $FRONTEND_PID 2>/dev/null
+    fi
+    
+    if [ -n "$CLOUDFLARED_PID" ]; then
+        echo "Stopping cloudflared (PID: $CLOUDFLARED_PID)..."
+        kill $CLOUDFLARED_PID 2>/dev/null
+    fi
+    # Also ensure any other cloudflared processes are killed (like shutdown.sh does)
+    pkill -f "cloudflared" 2>/dev/null
+    
+    # Fallback: Kill by port to ensure nothing is left holding the port
+    echo "Ensuring ports are freed..."
+    lsof -ti:8000 | xargs kill -9 2>/dev/null
+    lsof -ti:3000 | xargs kill -9 2>/dev/null
+    
     exit 0
 }
 
@@ -111,11 +144,39 @@ cd ..
 sleep 3
 
 # Start frontend in background
+# BROWSER=none prevents npm start from opening the browser automatically
 echo "Starting frontend server..."
 cd frontend
-npm start &
+BROWSER=none npm start &
 FRONTEND_PID=$!
 cd ..
 
-# Wait for both processes
-wait $BACKEND_PID $FRONTEND_PID
+# Start cloudflared tunnel
+# Start cloudflared tunnel
+if [ "$HAS_CLOUDFLARED" = true ]; then
+    echo "☁️  Starting cloudflared tunnel..."
+    # Log output to file for debugging
+    cloudflared tunnel run stockbot > cloudflared.log 2>&1 &
+    CLOUDFLARED_PID=$!
+    echo "   Tunnel started with PID: $CLOUDFLARED_PID"
+    echo "   Logs are being written to: cloudflared.log"
+    
+    # Wait a bit for backend/tunnel to be ready then open URL
+    (
+        sleep 5
+        # Check if tunnel is still running
+        if kill -0 $CLOUDFLARED_PID 2>/dev/null; then
+             echo "✅ Tunnel is running. Opening https://stockbot.drew-ratliff.com"
+             open "https://stockbot.drew-ratliff.com"
+        else
+             echo "❌ Tunnel failed to start. Check cloudflared.log for details."
+             open "http://localhost:3000"
+        fi
+    ) &
+else
+    # Fallback to localhost if no tunnel
+    (sleep 5 && open "http://localhost:3000") &
+fi
+
+# Wait for all processes
+wait

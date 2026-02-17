@@ -11,8 +11,14 @@ kill_process() {
     local process_name=$1
     local pids=$(pgrep -f "$process_name")
     
+    # First try SIGTERM
     if [ -n "$pids" ]; then
         echo "🔍 Found $process_name processes: $pids"
+        # Try to kill children first (important for uvicorn reloader)
+        for pid in $pids; do
+            pkill -P $pid 2>/dev/null
+        done
+        
         echo "$pids" | xargs kill -TERM 2>/dev/null
         sleep 2
         
@@ -39,11 +45,17 @@ kill_process "react-scripts start"
 
 # Kill cloudflared tunnel if running
 echo "☁️  Stopping cloudflared tunnel..."
-kill_process "cloudflared tunnel run stockbot"
+kill_process "cloudflared"
 
 # Kill any remaining node processes related to the project
 echo "🧹 Cleaning up remaining processes..."
 pkill -f "StockBot-1" 2>/dev/null || true
+pkill -f "uvicorn" 2>/dev/null || true
+
+# Final safety check - kill by port
+echo "🔌 Ensuring ports are released..."
+lsof -ti:8000 | xargs kill -9 2>/dev/null
+lsof -ti:3000 | xargs kill -9 2>/dev/null
 
 echo ""
 echo "✅ StockBot shutdown complete!"
