@@ -126,8 +126,8 @@ const Dashboard: React.FC = () => {
                 )}
                 <Typography variant="h6">Total Return</Typography>
               </Box>
-              <Typography 
-                variant="h4" 
+              <Typography
+                variant="h4"
                 color={(portfolioSummary?.total_return || 0) >= 0 ? 'success.main' : 'error.main'}
               >
                 ${portfolioSummary?.total_return.toFixed(2) || '0.00'}
@@ -145,7 +145,7 @@ const Dashboard: React.FC = () => {
             <CardContent>
               <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
                 <Typography variant="h6">Bot Status</Typography>
-                <Chip 
+                <Chip
                   label={botStatus?.is_active ? 'Active' : 'Inactive'}
                   color={botStatus?.is_active ? 'success' : 'default'}
                   size="small"
@@ -194,11 +194,11 @@ const Dashboard: React.FC = () => {
                 Market Status
               </Typography>
               <Box display="flex" gap={1} mb={2}>
-                <Chip 
+                <Chip
                   label={botStatus?.is_trading_hours ? 'Market Open' : 'Market Closed'}
                   color={botStatus?.is_trading_hours ? 'success' : 'default'}
                 />
-                <Chip 
+                <Chip
                   label={`${portfolioSummary?.holdings_count || 0} Holdings`}
                   variant="outlined"
                 />

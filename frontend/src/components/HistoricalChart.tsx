@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import Plot from 'react-plotly.js';
-import { 
-  Card, 
-  CardContent, 
-  Typography, 
-  Box, 
-  CircularProgress, 
-  Alert, 
-  FormControl, 
-  Select, 
-  MenuItem, 
+import { Trade } from '../services/api';
+import {
+  Card,
+  CardContent,
+  Typography,
+  Box,
+  CircularProgress,
+  Alert,
+  FormControl,
+  Select,
+  MenuItem,
   SelectChangeEvent,
   Chip
 } from '@mui/material';
@@ -30,9 +31,21 @@ interface StockHistoryResponse {
   data: HistoricalData[];
 }
 
-const HistoricalChart: React.FC = () => {
+interface HistoricalChartProps {
+  symbol?: string; // If provided, locks the chart to this symbol
+  height?: number; // Custom height
+  trades?: Trade[]; // Trades to plot as markers
+  showToolbar?: boolean; // Whether to show the symbol selector
+}
+
+const HistoricalChart: React.FC<HistoricalChartProps> = ({
+  symbol,
+  height = 500,
+  trades = [],
+  showToolbar = true
+}) => {
   const [holdings, setHoldings] = useState<Holding[]>([]);
-  const [selectedSymbol, setSelectedSymbol] = useState<string>('');
+  const [selectedSymbol, setSelectedSymbol] = useState<string>(symbol || '');
   const [period, setPeriod] = useState<string>('1mo');
   const [historicalData, setHistoricalData] = useState<HistoricalData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,26 +63,35 @@ const HistoricalChart: React.FC = () => {
 
   const fetchHoldings = async () => {
     try {
+      if (symbol) {
+        // If symbol prop is provided, we don't necessarily need to fetch all holdings for the selector
+        // But we might want to if showToolbar is true.
+        // For simplicity, if symbol is fixed, we just set it.
+        if (!selectedSymbol) setSelectedSymbol(symbol);
+        return;
+      }
+
       const holdingsData = await portfolioAPI.getHoldings();
       setHoldings(holdingsData);
-      
+
       // Set the first holding as default selected symbol
       if (holdingsData.length > 0 && !selectedSymbol) {
         setSelectedSymbol(holdingsData[0].symbol);
       }
     } catch (err) {
       console.error('Error fetching holdings:', err);
-      setError('Failed to load holdings');
+      // Only set error if we really need holdings (no symbol provided)
+      if (!symbol) setError('Failed to load holdings');
     }
   };
 
   const fetchHistoricalData = async (symbol: string, selectedPeriod: string) => {
     if (!symbol) return;
-    
+
     try {
       setLoading(true);
       setError(null);
-      
+
       const response: StockHistoryResponse = await stocksAPI.getStockHistory(symbol, selectedPeriod);
       setHistoricalData(response.data);
     } catch (err) {
@@ -82,8 +104,13 @@ const HistoricalChart: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchHoldings();
-  }, []);
+    if (!symbol) {
+      fetchHoldings();
+    } else {
+      // If symbol prop changes, update selectedSymbol
+      setSelectedSymbol(symbol);
+    }
+  }, [symbol]);
 
   useEffect(() => {
     if (selectedSymbol) {
@@ -97,7 +124,7 @@ const HistoricalChart: React.FC = () => {
       const interval = setInterval(() => {
         fetchHistoricalData(selectedSymbol, period);
       }, 60000);
-      
+
       return () => clearInterval(interval);
     }
   }, [selectedSymbol, period]);
@@ -110,7 +137,7 @@ const HistoricalChart: React.FC = () => {
     setPeriod(event.target.value);
   };
 
-  if (holdings.length === 0) {
+  if (!symbol && holdings.length === 0 && !loading) {
     return (
       <Card>
         <CardContent>
@@ -149,11 +176,11 @@ const HistoricalChart: React.FC = () => {
   const volumes = historicalData.map(d => d.volume);
 
   // Calculate price change for color coding
-  const priceChange = historicalData.length > 1 
-    ? historicalData[historicalData.length - 1].close - historicalData[0].close 
+  const priceChange = historicalData.length > 1
+    ? historicalData[historicalData.length - 1].close - historicalData[0].close
     : 0;
-  const priceChangePercent = historicalData.length > 1 
-    ? ((historicalData[historicalData.length - 1].close - historicalData[0].close) / historicalData[0].close) * 100 
+  const priceChangePercent = historicalData.length > 1
+    ? ((historicalData[historicalData.length - 1].close - historicalData[0].close) / historicalData[0].close) * 100
     : 0;
 
   const candlestickData = [{
@@ -166,7 +193,7 @@ const HistoricalChart: React.FC = () => {
     name: selectedSymbol,
     increasing: { line: { color: '#4caf50' } },
     decreasing: { line: { color: '#f44336' } },
-    hovertemplate: 
+    hovertemplate:
       '<b>%{x}</b><br>' +
       'Open: $%{open:.2f}<br>' +
       'High: $%{high:.2f}<br>' +
@@ -183,11 +210,35 @@ const HistoricalChart: React.FC = () => {
     name: 'Volume',
     yaxis: 'y2',
     marker: { color: 'rgba(158, 158, 158, 0.3)' },
-    hovertemplate: 
+    hovertemplate:
       '<b>%{x}</b><br>' +
       'Volume: %{y:,.0f}<br>' +
       '<extra></extra>'
   }];
+
+  // Purchase markers
+  const buyTrades = trades.filter(t => t.action === 'BUY' && t.symbol === selectedSymbol);
+  const markerData = buyTrades.length > 0 ? [{
+    type: 'scatter' as const,
+    mode: 'markers' as const,
+    x: buyTrades.map(t => t.executed_at),
+    y: buyTrades.map(t => t.price),
+    name: 'Buy Point',
+    marker: {
+      symbol: 'triangle-up',
+      size: 12,
+      color: '#00C805', // Bright green
+      line: {
+        color: '#FFFFFF',
+        width: 1
+      }
+    },
+    hovertemplate:
+      '<b>Buy Executed</b><br>' +
+      'Date: %{x}<br>' +
+      'Price: $%{y:.2f}<br>' +
+      '<extra></extra>'
+  }] : [];
 
   const layout = {
     title: {
@@ -198,7 +249,7 @@ const HistoricalChart: React.FC = () => {
     paper_bgcolor: 'rgba(0,0,0,0)',
     plot_bgcolor: 'rgba(0,0,0,0)',
     margin: { t: 60, b: 50, l: 60, r: 60 },
-    height: 500,
+    height: height,
     xaxis: {
       title: 'Date',
       rangeslider: { visible: false },
@@ -239,30 +290,32 @@ const HistoricalChart: React.FC = () => {
           <Typography variant="h6">
             Historical Price Chart
           </Typography>
-          
+
           <Box display="flex" gap={2} alignItems="center">
             {priceChange !== 0 && (
-              <Chip 
+              <Chip
                 label={`${priceChange >= 0 ? '+' : ''}${priceChange.toFixed(2)} (${priceChangePercent >= 0 ? '+' : ''}${priceChangePercent.toFixed(2)}%)`}
                 color={priceChange >= 0 ? 'success' : 'error'}
                 size="small"
               />
             )}
-            
-            <FormControl size="small" sx={{ minWidth: 120 }}>
-              <Select
-                value={selectedSymbol}
-                onChange={handleSymbolChange}
-                displayEmpty
-              >
-                {holdings.map((holding) => (
-                  <MenuItem key={holding.symbol} value={holding.symbol}>
-                    {holding.symbol}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            
+
+            {showToolbar && (
+              <FormControl size="small" sx={{ minWidth: 120 }}>
+                <Select
+                  value={selectedSymbol}
+                  onChange={handleSymbolChange}
+                  displayEmpty
+                >
+                  {holdings.map((holding) => (
+                    <MenuItem key={holding.symbol} value={holding.symbol}>
+                      {holding.symbol}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
+
             <FormControl size="small" sx={{ minWidth: 100 }}>
               <Select
                 value={period}
@@ -277,7 +330,7 @@ const HistoricalChart: React.FC = () => {
             </FormControl>
           </Box>
         </Box>
-        
+
         {loading ? (
           <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
             <CircularProgress />
@@ -285,12 +338,12 @@ const HistoricalChart: React.FC = () => {
         ) : historicalData.length > 0 ? (
           <>
             <Plot
-              data={[...candlestickData, ...volumeData]}
+              data={[...candlestickData, ...volumeData, ...markerData]}
               layout={layout}
               config={config}
-              style={{ width: '100%', height: '500px' }}
+              style={{ width: '100%', height: `${height}px` }}
             />
-            
+
             <Typography variant="caption" color="textSecondary" sx={{ mt: 1, display: 'block' }}>
               Updates every minute • Candlestick chart shows OHLC data • Volume bars on secondary axis
             </Typography>

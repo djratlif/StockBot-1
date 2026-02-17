@@ -147,7 +147,14 @@ sleep 3
 # BROWSER=none prevents npm start from opening the browser automatically
 echo "Starting frontend server..."
 cd frontend
-BROWSER=none npm start &
+# Check for production build
+if [ -d "build" ]; then
+    echo "📦 Found production build. Serving with static server..."
+    npx serve -s build -l 3000 &
+else
+    echo "⚠️  No build found. Starting development server..."
+    BROWSER=none npm start &
+fi
 FRONTEND_PID=$!
 cd ..
 

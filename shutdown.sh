@@ -42,6 +42,7 @@ kill_process "uvicorn app.main:app"
 echo "⚛️  Stopping frontend server..."
 kill_process "npm start"
 kill_process "react-scripts start"
+kill_process "serve"
 
 # Kill cloudflared tunnel if running
 echo "☁️  Stopping cloudflared tunnel..."
