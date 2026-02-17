@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     allowed_emails: Optional[str] = None  # Comma-separated list of allowed emails
     
     # Bot Configuration
-    initial_balance: float = 20.00
+    initial_balance: float = 2000.00
     default_max_daily_trades: int = 5
     default_risk_tolerance: str = "MEDIUM"
     
@@ -42,7 +42,12 @@ class Settings(BaseSettings):
     debug: bool = True
     
     # CORS
-    allowed_origins: list = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    # CORS
+    allowed_origins: list = [
+        "http://localhost:3000", 
+        "http://127.0.0.1:3000",
+        "https://stockbot.drew-ratliff.com"
+    ]
     
     @property
     def allowed_emails_list(self) -> list:

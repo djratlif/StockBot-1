@@ -155,6 +155,7 @@ class PortfolioService:
             else:
                 # Create new holding
                 holding = Holdings(
+                    user_id=portfolio.user_id,
                     symbol=decision.symbol,
                     quantity=decision.quantity,
                     average_cost=decision.current_price,
@@ -164,6 +165,7 @@ class PortfolioService:
             
             # Create trade record
             trade = Trades(
+                user_id=portfolio.user_id,
                 symbol=decision.symbol,
                 action=TradeAction.BUY,
                 quantity=decision.quantity,
@@ -209,6 +211,7 @@ class PortfolioService:
             
             # Create trade record
             trade = Trades(
+                user_id=portfolio.user_id,
                 symbol=decision.symbol,
                 action=TradeAction.SELL,
                 quantity=decision.quantity,
