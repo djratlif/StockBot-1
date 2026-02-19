@@ -33,6 +33,8 @@ export interface PortfolioSummary {
   total_return: number;
   return_percentage: number;
   holdings_count: number;
+  daily_change?: number;
+  daily_change_percent?: number;
 }
 
 export interface Holding {
@@ -100,6 +102,10 @@ export interface TradingStats {
   average_trade_return: number;
   best_trade: number | null;
   worst_trade: number | null;
+  best_open_position?: number;
+  worst_open_position?: number;
+  best_open_symbol?: string;
+  worst_open_symbol?: string;
 }
 
 export interface APIResponse {
@@ -172,6 +178,9 @@ export const botAPI = {
 
   getMarketSentiment: (): Promise<APIResponse> =>
     api.get('/api/bot/market-sentiment').then(res => res.data),
+
+  panicSell: (): Promise<APIResponse> =>
+    api.post('/api/bot/panic-sell').then(res => res.data),
 };
 
 // Trades API

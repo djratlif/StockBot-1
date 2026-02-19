@@ -495,3 +495,60 @@ async def get_trading_status():
     except Exception as e:
         logger.error(f"Error getting trading status: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.post("/panic-sell", response_model=APIResponse)
+async def panic_sell(db: Session = Depends(get_db)):
+    """PANIC BUTTON: Stop the bot and liquidate all holdings immediately"""
+    try:
+        # 1. Stop the bot
+        config = db.query(BotConfig).first()
+        if not config:
+            # Create default if missing
+            config = BotConfig(is_active=False)
+            db.add(config)
+        
+        config.is_active = False
+        db.commit()
+        
+        # Stop continuous trading
+        await trading_bot_service.stop_continuous_trading()
+        
+        # 2. Log 'Panic Sell' action
+        from app.models.models import ActivityLog
+        from datetime import datetime
+        import pytz
+        
+        est = pytz.timezone('US/Eastern')
+        activity = ActivityLog(
+            action="PANIC_SELL",
+            details="User triggered Panic Sell - Stopping bot and liquidating all positions",
+            timestamp=datetime.now(est)
+        )
+        db.add(activity)
+        db.commit()
+        
+        logger.warning("PANIC SELL TRIGGERED")
+        
+        # 3. Liquidate Portfolio
+        liquidation_results = await portfolio_service.liquidate_portfolio(db)
+        
+        return APIResponse(
+            success=True,
+            message="Panic Sell executed: Bot stopped and portfolio liquidation initiated",
+            data={
+                "bot_stopped": True,
+                "liquidation_results": liquidation_results
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error during panic sell: {str(e)}")
+        # Try to ensure bot is stopped even if liquidation fails
+        try:
+            config = db.query(BotConfig).first()
+            if config:
+                config.is_active = False
+                db.commit()
+        except:
+            pass
+            
+        raise HTTPException(status_code=500, detail=f"Panic sell failed: {str(e)}")

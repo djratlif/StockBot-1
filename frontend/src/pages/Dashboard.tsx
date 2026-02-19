@@ -17,6 +17,7 @@ import {
   Stop,
   AccountBalance,
   ShowChart,
+  Warning,
 } from '@mui/icons-material';
 import { portfolioAPI, botAPI, tradesAPI } from '../services/api';
 import type { PortfolioSummary, BotStatus, TradingStats } from '../services/api';
@@ -134,8 +135,11 @@ const Dashboard: React.FC = () => {
               >
                 ${portfolioSummary?.total_return.toFixed(2) || '0.00'}
               </Typography>
+              <Typography variant="body2" color={(portfolioSummary?.daily_change || 0) >= 0 ? 'success.main' : 'error.main'}>
+                Daily: {(portfolioSummary?.daily_change || 0) >= 0 ? '+' : ''}${portfolioSummary?.daily_change?.toFixed(2) || '0.00'} ({(portfolioSummary?.daily_change_percent || 0).toFixed(2)}%)
+              </Typography>
               <Typography variant="body2" color="textSecondary">
-                {portfolioSummary?.return_percentage.toFixed(2) || '0.00'}%
+                Total: {portfolioSummary?.return_percentage.toFixed(2) || '0.00'}%
               </Typography>
             </CardContent>
           </Card>
@@ -235,6 +239,26 @@ const Dashboard: React.FC = () => {
                 <Button variant="outlined" size="small" onClick={fetchDashboardData}>
                   Refresh Data
                 </Button>
+                <Button
+                  variant="contained"
+                  size="small"
+                  color="error"
+                  startIcon={<Warning />}
+                  onClick={async () => {
+                    if (window.confirm("ARE YOU SURE? This will stop the bot and SELL ALL HOLDINGS immediately!")) {
+                      try {
+                        await botAPI.panicSell();
+                        alert("PANIC SELL TRIGGERED: Bot stopped and all holdings are being liquidated.");
+                        fetchDashboardData();
+                      } catch (error) {
+                        alert("Error executing panic sell. Please check logs.");
+                      }
+                    }
+                  }}
+                  sx={{ bgcolor: '#d32f2f', '&:hover': { bgcolor: '#b71c1c' } }}
+                >
+                  SELL ALL AND STOP BOT
+                </Button>
               </Box>
             </CardContent>
           </Card>
@@ -248,7 +272,7 @@ const Dashboard: React.FC = () => {
                 Performance Summary
               </Typography>
               <Grid container spacing={2}>
-                <Grid item xs={6} sm={3}>
+                <Grid item xs={6} sm={2}>
                   <Typography variant="body2" color="textSecondary">
                     Total Trades
                   </Typography>
@@ -256,7 +280,7 @@ const Dashboard: React.FC = () => {
                     {tradingStats?.total_trades || 0}
                   </Typography>
                 </Grid>
-                <Grid item xs={6} sm={3}>
+                <Grid item xs={6} sm={2}>
                   <Typography variant="body2" color="textSecondary">
                     Avg Return
                   </Typography>
@@ -264,7 +288,7 @@ const Dashboard: React.FC = () => {
                     ${tradingStats?.average_trade_return.toFixed(2) || '0.00'}
                   </Typography>
                 </Grid>
-                <Grid item xs={6} sm={3}>
+                <Grid item xs={6} sm={2}>
                   <Typography variant="body2" color="textSecondary">
                     Best Trade
                   </Typography>
@@ -272,12 +296,32 @@ const Dashboard: React.FC = () => {
                     ${tradingStats?.best_trade?.toFixed(2) || '0.00'}
                   </Typography>
                 </Grid>
-                <Grid item xs={6} sm={3}>
+                <Grid item xs={6} sm={2}>
                   <Typography variant="body2" color="textSecondary">
                     Worst Trade
                   </Typography>
                   <Typography variant="h6" color="error.main">
                     ${tradingStats?.worst_trade?.toFixed(2) || '0.00'}
+                  </Typography>
+                </Grid>
+                <Grid item xs={6} sm={2}>
+                  <Typography variant="body2" color="textSecondary">
+                    Best Open
+                  </Typography>
+                  <Typography variant="h6" color="success.main">
+                    {tradingStats?.best_open_symbol ? (
+                      <>{tradingStats.best_open_symbol} (+${tradingStats.best_open_position?.toFixed(2)})</>
+                    ) : '-'}
+                  </Typography>
+                </Grid>
+                <Grid item xs={6} sm={2}>
+                  <Typography variant="body2" color="textSecondary">
+                    Worst Open
+                  </Typography>
+                  <Typography variant="h6" color="error.main">
+                    {tradingStats?.worst_open_symbol ? (
+                      <>{tradingStats.worst_open_symbol} (-${Math.abs(tradingStats.worst_open_position || 0).toFixed(2)})</>
+                    ) : '-'}
                   </Typography>
                 </Grid>
               </Grid>

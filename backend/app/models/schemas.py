@@ -152,6 +152,8 @@ class PortfolioSummary(BaseModel):
     total_return: float
     return_percentage: float
     holdings_count: int
+    daily_change: Optional[float] = 0.0
+    daily_change_percent: Optional[float] = 0.0
 
 # Trading Statistics Schema
 class TradingStats(BaseModel):
@@ -163,6 +165,10 @@ class TradingStats(BaseModel):
     average_trade_return: float
     best_trade: Optional[float] = None
     worst_trade: Optional[float] = None
+    best_open_position: Optional[float] = None
+    worst_open_position: Optional[float] = None
+    best_open_symbol: Optional[str] = None
+    worst_open_symbol: Optional[str] = None
 
 # API Response Schemas
 class APIResponse(BaseModel):

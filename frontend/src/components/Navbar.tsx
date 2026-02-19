@@ -15,6 +15,7 @@ import {
   ToggleButton,
   ToggleButtonGroup,
   Tooltip,
+  Switch,
 } from '@mui/material';
 import {
   Dashboard as DashboardIcon,
@@ -133,47 +134,22 @@ const Navbar: React.FC = () => {
 
         {/* User Profile - Right aligned */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <ToggleButtonGroup
-            value={tradingMode}
-            exclusive
-            onChange={handleTradingModeChange}
-            aria-label="trading mode"
-            size="small"
-            sx={{
-              mr: 2,
-              backgroundColor: 'rgba(255, 255, 255, 0.05)',
-              '& .MuiToggleButton-root': {
-                color: 'rgba(255, 255, 255, 0.5)',
-                '&.Mui-selected': {
-                  color: '#fff',
-                  backgroundColor: 'rgba(255, 255, 255, 0.2)',
-                  '&:hover': {
-                    backgroundColor: 'rgba(255, 255, 255, 0.3)',
-                  },
-                },
-                '&.Mui-disabled': {
-                  color: 'rgba(255, 255, 255, 0.2)',
-                }
-              }
-            }}
-          >
-            <ToggleButton value="paper" aria-label="fake trading">
-              <Tooltip title="Fake Money Trading">
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                  <LiveIcon fontSize="small" />
-                  <Typography variant="caption" sx={{ display: { xs: 'none', md: 'block' } }}>Fake</Typography>
-                </Box>
-              </Tooltip>
-            </ToggleButton>
-            <ToggleButton value="live" aria-label="real trading" disabled>
-              <Tooltip title="Real Money Trading - Coming Soon">
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                  <LiveIcon fontSize="small" />
-                  <Typography variant="caption" sx={{ display: { xs: 'none', md: 'block' } }}>Real</Typography>
-                </Box>
-              </Tooltip>
-            </ToggleButton>
-          </ToggleButtonGroup>
+          <Tooltip title="Real Trading - Coming Soon">
+            <Box sx={{ display: 'flex', alignItems: 'center', mr: 2, backgroundColor: 'rgba(255, 255, 255, 0.05)', padding: '4px 12px', borderRadius: '4px' }}>
+              <Typography variant="body2" sx={{ mr: 1, color: 'text.secondary', opacity: 0.7 }}>
+                Fake $
+              </Typography>
+              <Switch
+                checked={false}
+                disabled
+                size="small"
+                inputProps={{ 'aria-label': 'toggle real trading' }}
+              />
+              <Typography variant="body2" sx={{ ml: 1, color: 'text.disabled' }}>
+                Real $
+              </Typography>
+            </Box>
+          </Tooltip>
 
           <Typography variant="body2" sx={{ display: { xs: 'none', sm: 'block' } }}>
             {user?.name}

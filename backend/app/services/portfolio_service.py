@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 import logging
 from datetime import datetime, date
 from app.models.models import Portfolio, Holdings, Trades, BotConfig, TradeAction, ActivityLog
@@ -60,19 +60,36 @@ class PortfolioService:
             # Calculate total invested and current value
             total_invested = 0
             current_holdings_value = 0
+            daily_change = 0
             
             for holding in holdings:
                 # Update current price
                 current_price = await stock_service.get_current_price(holding.symbol)
+                
+                # Get change percent for daily change calculation
+                change_percent = 0
+                stock_info = await stock_service.get_stock_info(holding.symbol)
+                if stock_info:
+                    change_percent = stock_info.change_percent
+                
                 if current_price:
                     holding.current_price = current_price
                     db.commit()
                 
+                # Calculate value and change
+                holding_value = holding.quantity * holding.current_price
                 total_invested += holding.quantity * holding.average_cost
-                current_holdings_value += holding.quantity * holding.current_price
+                current_holdings_value += holding_value
+                
+                # Daily change contribution: Holding Value * (Change% / 100)
+                # This approximates the $ change for the day based on current value
+                daily_change += holding_value * (change_percent / 100)
             
             # Update portfolio total value
             total_value = portfolio.cash_balance + current_holdings_value
+            
+            # Calculate daily change percent for the whole portfolio
+            daily_change_percent = (daily_change / total_value) * 100 if total_value > 0 else 0
             
             # Check for value change
             value_change = total_value - previous_value
@@ -110,7 +127,9 @@ class PortfolioService:
                 total_invested=total_invested,
                 total_return=total_return,
                 return_percentage=return_percentage,
-                holdings_count=len(holdings)
+                holdings_count=len(holdings),
+                daily_change=daily_change,
+                daily_change_percent=daily_change_percent
             )
             
         except Exception as e:
@@ -273,6 +292,25 @@ class PortfolioService:
         try:
             trades = db.query(Trades).all()
             
+            # Calculate open positions stats
+            holdings = db.query(Holdings).all()
+            best_open_position = None
+            worst_open_position = None
+            best_open_symbol = None
+            worst_open_symbol = None
+            
+            for holding in holdings:
+                # Calculate return: (Current - Avg) * Qty
+                open_return = (holding.current_price - holding.average_cost) * holding.quantity
+                
+                if best_open_position is None or open_return > best_open_position:
+                    best_open_position = open_return
+                    best_open_symbol = holding.symbol
+                
+                if worst_open_position is None or open_return < worst_open_position:
+                    worst_open_position = open_return
+                    worst_open_symbol = holding.symbol
+            
             if not trades:
                 return TradingStats(
                     total_trades=0,
@@ -280,7 +318,11 @@ class PortfolioService:
                     losing_trades=0,
                     win_rate=0.0,
                     total_profit_loss=0.0,
-                    average_trade_return=0.0
+                    average_trade_return=0.0,
+                    best_open_position=best_open_position,
+                    worst_open_position=worst_open_position,
+                    best_open_symbol=best_open_symbol,
+                    worst_open_symbol=worst_open_symbol
                 )
             
             # Calculate statistics
@@ -337,7 +379,11 @@ class PortfolioService:
                 total_profit_loss=total_profit_loss,
                 average_trade_return=average_trade_return,
                 best_trade=best_trade,
-                worst_trade=worst_trade
+                worst_trade=worst_trade,
+                best_open_position=best_open_position,
+                worst_open_position=worst_open_position,
+                best_open_symbol=best_open_symbol,
+                worst_open_symbol=worst_open_symbol
             )
             
         except Exception as e:
@@ -375,6 +421,53 @@ class PortfolioService:
             logger.error(f"Error getting today's trades count: {str(e)}")
             return 0
     
+    async def liquidate_portfolio(self, db: Session) -> Dict[str, Any]:
+        """Liquidate all holdings (Panic Sell)"""
+        try:
+            holdings = db.query(Holdings).all()
+            results = {
+                "liquidated": [],
+                "errors": []
+            }
+            
+            if not holdings:
+                return {"message": "No holdings to liquidate", "count": 0}
+                
+            for holding in holdings:
+                try:
+                    # Get current price
+                    current_price = await stock_service.get_current_price(holding.symbol)
+                    if not current_price:
+                        # Fallback to last known price if live price fails
+                        current_price = holding.current_price
+                    
+                    # Create sell decision
+                    decision = TradingDecision(
+                        action=TradeActionEnum.SELL,
+                        symbol=holding.symbol,
+                        quantity=holding.quantity,
+                        confidence=10,
+                        reasoning="PANIC SELL TRIGGERED - User initiated liquidation",
+                        current_price=current_price
+                    )
+                    
+                    # Execute sell
+                    trade = self.execute_trade(db, decision)
+                    if trade:
+                        results["liquidated"].append(f"{holding.symbol} ({holding.quantity} shares)")
+                    else:
+                        results["errors"].append(f"Failed to sell {holding.symbol}")
+                        
+                except Exception as e:
+                    logger.error(f"Error liquidating {holding.symbol}: {str(e)}")
+                    results["errors"].append(f"Error selling {holding.symbol}: {str(e)}")
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"Error in liquidate_portfolio: {str(e)}")
+            return {"error": str(e)}
+
     def can_make_trade(self, db: Session, max_daily_trades: int) -> bool:
         """Check if we can make another trade today"""
         trades_today = self.get_trades_today(db)
