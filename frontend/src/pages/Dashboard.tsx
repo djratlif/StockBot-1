@@ -21,7 +21,7 @@ import {
 import { portfolioAPI, botAPI, tradesAPI } from '../services/api';
 import type { PortfolioSummary, BotStatus, TradingStats } from '../services/api';
 import ActivityFeed from '../components/ActivityFeed';
-import HistoricalChart from '../components/HistoricalChart';
+
 
 const Dashboard: React.FC = () => {
   const [portfolioSummary, setPortfolioSummary] = useState<PortfolioSummary | null>(null);
@@ -280,10 +280,7 @@ const Dashboard: React.FC = () => {
           </Card>
         </Grid>
 
-        {/* Historical Chart - Full Width */}
-        <Grid item xs={12}>
-          <HistoricalChart />
-        </Grid>
+
 
         {/* Activity Feed - Full Width */}
         <Grid item xs={12}>

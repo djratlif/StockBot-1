@@ -139,6 +139,9 @@ const Trading: React.FC = () => {
 
   useEffect(() => {
     fetchTrades();
+
+    const interval = setInterval(fetchTrades, 60000);
+    return () => clearInterval(interval);
   }, []);
 
   if (loading) {
@@ -151,9 +154,27 @@ const Trading: React.FC = () => {
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>
-        Trading
-      </Typography>
+      <Box display="flex" alignItems="center" mb={2}>
+        <Typography variant="h4" style={{ marginRight: '16px', marginBottom: 0 }}>
+          Trading
+        </Typography>
+        <Chip 
+          label="Live Updates" 
+          color="success" 
+          size="small" 
+          variant="outlined" 
+          style={{ animation: 'pulse 2s infinite' }}
+        />
+        <style>
+          {`
+            @keyframes pulse {
+              0% { opacity: 1; }
+              50% { opacity: 0.5; }
+              100% { opacity: 1; }
+            }
+          `}
+        </style>
+      </Box>
 
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
