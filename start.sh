@@ -12,6 +12,21 @@ if [ ! -d "backend" ] || [ ! -d "frontend" ]; then
     exit 1
 fi
 
+# Check for production flag
+# Check for flags
+USE_PROD=false
+DEPLOY_MODE=false
+
+for arg in "$@"; do
+    if [ "$arg" == "--prod" ]; then
+        USE_PROD=true
+    fi
+    if [ "$arg" == "--deploy" ]; then
+        DEPLOY_MODE=true
+        USE_PROD=true # Deploy implies prod
+    fi
+done
+
 # Function to check if a command exists
 command_exists() {
     command -v "$1" >/dev/null 2>&1
@@ -84,6 +99,12 @@ if [ ! -d "node_modules" ]; then
     npm install
 fi
 
+# Build for production if deploying
+if [ "$DEPLOY_MODE" = true ]; then
+    echo "🏗️  Building frontend for deployment..."
+    npm run build
+fi
+
 cd ..
 
 # Start servers
@@ -148,19 +169,24 @@ sleep 3
 echo "Starting frontend server..."
 cd frontend
 # Check for production build
-if [ -d "build" ]; then
-    echo "📦 Found production build. Serving with static server..."
+# Check for production build
+if [ "$USE_PROD" = true ]; then
+    if [ ! -d "build" ]; then
+        echo "⚠️  --prod flag used but no build found. Building now..."
+        npm run build
+    fi
+    echo "📦 Serving production build..."
     npx serve -s build -l 3000 &
 else
-    echo "⚠️  No build found. Starting development server..."
+    echo "👨‍💻 Starting development server..."
     BROWSER=none npm start &
 fi
 FRONTEND_PID=$!
 cd ..
 
 # Start cloudflared tunnel
-# Start cloudflared tunnel
-if [ "$HAS_CLOUDFLARED" = true ]; then
+# Start cloudflared tunnel ONLY if deploy mode is active
+if [ "$HAS_CLOUDFLARED" = true ] && [ "$DEPLOY_MODE" = true ]; then
     echo "☁️  Starting cloudflared tunnel..."
     # Log output to file for debugging
     cloudflared tunnel run stockbot > cloudflared.log 2>&1 &
@@ -181,7 +207,8 @@ if [ "$HAS_CLOUDFLARED" = true ]; then
         fi
     ) &
 else
-    # Fallback to localhost if no tunnel
+    # Fallback to localhost if no tunnel or not deploying
+    echo "✅ Application started locally."
     (sleep 5 && open "http://localhost:3000") &
 fi
 

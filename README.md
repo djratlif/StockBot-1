@@ -29,6 +29,7 @@ An intelligent stock trading bot that uses OpenAI GPT-4 for predictive analytics
 - Node.js 16 or higher
 - OpenAI API key (required)
 - Git
+- Google Cloud Console account (for Google Auth)
 
 ## 🚀 Quick Start
 
@@ -38,14 +39,14 @@ An intelligent stock trading bot that uses OpenAI GPT-4 for predictive analytics
 ```bash
 git clone <your-repo-url>
 cd StockBot
-./start.sh
+./manage.sh start
 ```
 
 **For Windows:**
 ```bash
 git clone <your-repo-url>
 cd StockBot
-start.bat
+manage.bat start
 ```
 
 The startup script will:
@@ -165,6 +166,52 @@ npm start
 
 **Cost Estimation**: ~$5-15/month for moderate usage
 
+## 🔐 Google Authentication Setup
+
+To enable Google Sign-In for your application:
+
+### 1. Google Cloud Console Setup
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project named `StockBot`
+3. Enable "Google+ API" in "APIs & Services" -> "Library"
+4. Create OAuth 2.0 Credentials:
+   - Go to "APIs & Services" -> "Credentials"
+   - Create OAuth client ID -> Web application
+   - Add authorized origins: `http://localhost:3000`
+   - Add authorized redirect URIs: `http://localhost:3000`
+   - Copy **Client ID** and **Client Secret**
+
+### 2. Configure Environment Variables
+
+**Backend (`backend/.env`):**
+```env
+GOOGLE_CLIENT_ID=your_google_client_id
+GOOGLE_CLIENT_SECRET=your_google_client_secret
+```
+
+**Frontend (`frontend/.env`):**
+```env
+REACT_APP_GOOGLE_CLIENT_ID=your_google_client_id
+```
+
+## 🛠️ Management Commands
+
+Use the `manage.sh` script for easy control:
+
+```bash
+./manage.sh [command]
+```
+
+### Available Commands
+
+- **start**: Start backend and frontend in background (production mode)
+- **start-logs**: Start with visible logs (development mode)
+- **stop**: Gracefully stop all services
+- **restart**: Restart all services
+- **status**: Check running processes
+- **logs**: View log information
+
 ## 📊 Using the Application
 
 ### Dashboard
@@ -267,6 +314,32 @@ StockBot/
 └── README.md               # This file
 ```
 
+## ❓ Troubleshooting
+
+### Common Issues
+
+1. **"Module not found: Error: Can't resolve './App'"**
+   - Run `npm install` in frontend directory
+   - Clear npm cache: `npm cache clean --force`
+   - Delete `node_modules` and reinstall
+
+2. **TypeScript Errors**
+   - Ensure `tsconfig.json` exists
+   - Install types: `npm install --save-dev @types/react @types/react-dom @types/node`
+
+3. **Backend Python Errors**
+   - Ensure virtual environment is activated
+   - Reinstall requirements: `pip install -r requirements.txt`
+   - Check python version (3.9+)
+
+4. **OpenAI API Key Issues**
+   - Verify `.env` file exists in `backend/`
+   - check API key format begins with `sk-...`
+
+5. **Clashing Ports**
+   - Check if port 8000 or 3000 is in use: `lsof -i :8000`
+   - Kill process: `kill -9 <PID>`
+
 ## 🧪 Testing
 
 ### Backend Tests
@@ -331,21 +404,6 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - **API Reference**: Visit http://localhost:8000/docs when running
 - **Issues**: Create GitHub issues for bugs or feature requests
 - **Discussions**: Use GitHub discussions for questions
-
-## 🎉 Getting Started Checklist
-
-- [ ] Clone the repository
-- [ ] Set up Python virtual environment
-- [ ] Install backend dependencies
-- [ ] Get OpenAI API key
-- [ ] Configure environment variables
-- [ ] Install frontend dependencies
-- [ ] Start backend server
-- [ ] Start frontend application
-- [ ] Access dashboard at http://localhost:3000
-- [ ] Initialize portfolio
-- [ ] Configure bot settings
-- [ ] Start trading!
 
 ---
 
