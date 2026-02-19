@@ -46,7 +46,7 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
 }) => {
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [selectedSymbol, setSelectedSymbol] = useState<string>(symbol || '');
-  const [period, setPeriod] = useState<string>('1mo');
+  const [period, setPeriod] = useState<string>('1d');
   const [historicalData, setHistoricalData] = useState<HistoricalData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -104,13 +104,37 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
   };
 
   useEffect(() => {
-    if (!symbol) {
-      fetchHoldings();
-    } else {
-      // If symbol prop changes, update selectedSymbol
+    if (symbol) {
       setSelectedSymbol(symbol);
+
+      // Determine optimal period based on buy date
+      if (trades && trades.length > 0) {
+        // Find earliest buy trade for this symbol
+        const buyTrades = trades.filter(t => t.symbol === symbol && t.action === 'BUY');
+        if (buyTrades.length > 0) {
+          // Sort by date ascending to get the first buy
+          buyTrades.sort((a, b) => new Date(a.executed_at).getTime() - new Date(b.executed_at).getTime());
+          const firstBuyDate = new Date(buyTrades[0].executed_at);
+          const now = new Date();
+          const diffTime = Math.abs(now.getTime() - firstBuyDate.getTime());
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+          let newPeriod = '1d';
+          if (diffDays <= 1) newPeriod = '1d';
+          else if (diffDays <= 5) newPeriod = '5d';
+          else if (diffDays <= 30) newPeriod = '1mo';
+          else if (diffDays <= 90) newPeriod = '3mo';
+          else if (diffDays <= 180) newPeriod = '6mo';
+          else if (diffDays <= 365) newPeriod = '1y';
+          else newPeriod = '2y';
+
+          setPeriod(newPeriod);
+        }
+      }
+    } else {
+      fetchHoldings();
     }
-  }, [symbol]);
+  }, [symbol, trades]); // specific dependency on trades to recalculate if they load later
 
   useEffect(() => {
     if (selectedSymbol) {
@@ -338,10 +362,13 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
         ) : historicalData.length > 0 ? (
           <>
             <Plot
+              // Add a unique divId to prevent collision and handle unmounting better
+              divId={`chart-${selectedSymbol}-${period}`}
               data={[...candlestickData, ...volumeData, ...markerData]}
               layout={layout}
               config={config}
               style={{ width: '100%', height: `${height}px` }}
+              useResizeHandler={true}
             />
 
             <Typography variant="caption" color="textSecondary" sx={{ mt: 1, display: 'block' }}>

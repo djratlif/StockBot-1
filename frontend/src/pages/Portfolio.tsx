@@ -24,6 +24,7 @@ const Portfolio: React.FC = () => {
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
 
   const fetchPortfolioData = async () => {
     try {
@@ -37,6 +38,7 @@ const Portfolio: React.FC = () => {
 
       setPortfolioSummary(summary);
       setHoldings(holdingsData);
+      setLastUpdated(new Date());
     } catch (err) {
       setError('Failed to load portfolio data');
       console.error('Portfolio error:', err);
@@ -47,6 +49,9 @@ const Portfolio: React.FC = () => {
 
   useEffect(() => {
     fetchPortfolioData();
+    // Refresh data every minute (60000ms) to match Alpha Vantage update availability and avoid rate limits
+    const interval = setInterval(fetchPortfolioData, 60000);
+    return () => clearInterval(interval);
   }, []);
 
   if (loading) {
@@ -61,6 +66,9 @@ const Portfolio: React.FC = () => {
     <Box>
       <Typography variant="h4" gutterBottom>
         Portfolio
+        <Typography variant="caption" sx={{ ml: 2, verticalAlign: 'middle', color: 'text.secondary' }}>
+          Updated: {lastUpdated.toLocaleTimeString()}
+        </Typography>
       </Typography>
 
       {error && (
@@ -103,8 +111,8 @@ const Portfolio: React.FC = () => {
               <Typography variant="h6" gutterBottom>
                 Total Return
               </Typography>
-              <Typography 
-                variant="h4" 
+              <Typography
+                variant="h4"
                 color={(portfolioSummary?.total_return || 0) >= 0 ? 'success.main' : 'error.main'}
               >
                 ${portfolioSummary?.total_return.toFixed(2) || '0.00'}
@@ -123,7 +131,7 @@ const Portfolio: React.FC = () => {
               <Typography variant="h6" gutterBottom>
                 Current Holdings
               </Typography>
-              
+
               {holdings.length === 0 ? (
                 <Box textAlign="center" py={4}>
                   <Typography variant="body1" color="textSecondary">
@@ -160,13 +168,13 @@ const Portfolio: React.FC = () => {
                             <TableCell align="right">${holding.average_cost.toFixed(2)}</TableCell>
                             <TableCell align="right">${holding.current_price.toFixed(2)}</TableCell>
                             <TableCell align="right">${marketValue.toFixed(2)}</TableCell>
-                            <TableCell 
-                              align="right" 
+                            <TableCell
+                              align="right"
                               sx={{ color: gainLoss >= 0 ? 'success.main' : 'error.main' }}
                             >
                               ${gainLoss.toFixed(2)}
                             </TableCell>
-                            <TableCell 
+                            <TableCell
                               align="right"
                               sx={{ color: returnPercent >= 0 ? 'success.main' : 'error.main' }}
                             >

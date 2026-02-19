@@ -2,7 +2,7 @@ from sqlalchemy.orm import Session
 from typing import Dict, List, Optional, Tuple
 import logging
 from datetime import datetime, date
-from app.models.models import Portfolio, Holdings, Trades, BotConfig, TradeAction
+from app.models.models import Portfolio, Holdings, Trades, BotConfig, TradeAction, ActivityLog
 from app.models.schemas import (
     PortfolioSummary, TradingStats, TradeCreate, TradingDecision, 
     TradeActionEnum, HoldingResponse, TradeResponse
@@ -52,6 +52,9 @@ class PortfolioService:
             if not portfolio:
                 return None
             
+            # Capture previous value for change tracking
+            previous_value = portfolio.total_value
+            
             holdings = db.query(Holdings).all()
             
             # Calculate total invested and current value
@@ -70,6 +73,30 @@ class PortfolioService:
             
             # Update portfolio total value
             total_value = portfolio.cash_balance + current_holdings_value
+            
+            # Check for value change
+            value_change = total_value - previous_value
+            
+            # Log significant changes or periodic updates
+            if abs(value_change) > 0.005: # Use small threshold for any movement
+                direction = "UP" if value_change > 0 else "DOWN"
+                action = f"PORTFOLIO_{direction}"
+                
+                # Format: "Portfolio Value: $200.00 -> $205.00 (+$5.00)"
+                sign = "+" if value_change > 0 else "" # Use empty string for positive to avoid "+$5.00"
+                if value_change < 0:
+                    sign = "-"
+                
+                details = f"Portfolio Value: ${previous_value:.2f} -> ${total_value:.2f} ({sign}${abs(value_change):.2f})"
+                
+                # Create Activity Log
+                log = ActivityLog(
+                    action=action,
+                    details=details
+                )
+                db.add(log)
+                logger.info(f"Logged activity: {details}")
+            
             portfolio.total_value = total_value
             db.commit()
             

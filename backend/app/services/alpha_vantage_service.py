@@ -3,6 +3,7 @@ import logging
 import json
 import time
 import asyncio
+import requests
 from typing import Optional, Dict, List
 from datetime import datetime, timedelta
 from alpha_vantage.timeseries import TimeSeries
@@ -27,7 +28,7 @@ class AlphaVantageService:
         
         # Smart caching to minimize API calls
         self.cache = {}
-        self.cache_duration = 300  # 5 minutes for real-time data
+        self.cache_duration = 55  # Cache for 55s to ensure expiry before 60s frontend poll
         self.daily_cache_duration = 3600  # 1 hour for daily data
         
         # Rate limiting - Premium plan: 150 requests per minute
@@ -139,8 +140,26 @@ class AlphaVantageService:
             await self._wait_for_rate_limit(db_session)
             logger.info(f"Fetching stock info for {symbol} from Alpha Vantage")
             
-            # Get intraday data for current price
-            data, meta_data = self.ts.get_intraday(symbol=symbol, interval='1min', outputsize='compact')
+            # Get intraday data using raw requests to support entitlement parameter
+            url = f"https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol={symbol}&interval=1min&entitlement=realtime&apikey={self.api_key}"
+            
+            try:
+                response = requests.get(url, timeout=10)
+                if response.status_code != 200:
+                    logger.error(f"Alpha Vantage API error: {response.status_code}")
+                    return None
+                    
+                data_json = response.json()
+                 # Check for API error
+                if "Error Message" in data_json:
+                    logger.error(f"API Error: {data_json['Error Message']}")
+                    return None
+                
+                data = data_json.get("Time Series (1min)")
+                meta_data = data_json.get("Meta Data")
+            except Exception as req_err:
+                logger.error(f"Request failed: {req_err}")
+                return None
             
             if not data:
                 logger.error(f"No data returned for {symbol}")
@@ -222,14 +241,37 @@ class AlphaVantageService:
             await self._wait_for_rate_limit()
             logger.info(f"Fetching current price for {symbol} from Alpha Vantage")
             
-            # Get quote data
-            data, meta_data = self.ts.get_quote_endpoint(symbol=symbol)
+            # Get intraday data using raw requests to support entitlement parameter
+            # The library doesn't support 'entitlement' keyword yet
+            url = f"https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol={symbol}&interval=1min&entitlement=realtime&apikey={self.api_key}"
             
-            if not data:
-                logger.error(f"No quote data returned for {symbol}")
+            try:
+                response = requests.get(url, timeout=10)
+                if response.status_code != 200:
+                    logger.error(f"Alpha Vantage API error: {response.status_code}")
+                    return None
+                    
+                data_json = response.json()
+                
+                # Check for API error
+                if "Error Message" in data_json:
+                    logger.error(f"API Error: {data_json['Error Message']}")
+                    return None
+                
+                data = data_json.get("Time Series (1min)")
+                meta_data = data_json.get("Meta Data")
+                
+            except Exception as req_err:
+                logger.error(f"Request failed: {req_err}")
                 return None
             
-            current_price = float(data['05. price'])
+            if not data:
+                logger.error(f"No intraday data returned for {symbol}")
+                return None
+            
+            # Get the most recent price
+            latest_time = max(data.keys())
+            current_price = float(data[latest_time]['4. close'])
             
             # Cache the result
             self._cache_data(cache_key, current_price)
@@ -245,17 +287,101 @@ class AlphaVantageService:
         try:
             cache_key = self._get_cache_key(symbol, f'historical_{period}')
             
-            # Check cache first (longer cache for historical data)
-            if cache_key in self.cache and self._is_cache_valid(self.cache[cache_key], self.daily_cache_duration):
-                logger.info(f"Using cached historical data for {symbol}")
+            # Check cache first
+            # Use shorter cache duration for intraday views (1d, 5d) so they update frequently
+            cache_ttl = self.cache_duration if period in ['1d', '5d'] else self.daily_cache_duration
+            
+            if cache_key in self.cache and self._is_cache_valid(self.cache[cache_key], cache_ttl):
+                logger.info(f"Using cached historical data for {symbol} ({period})")
                 return self.cache[cache_key]['data']
             
             # Make API call
             await self._wait_for_rate_limit()
-            logger.info(f"Fetching historical data for {symbol} from Alpha Vantage")
+            logger.info(f"Fetching historical data for {symbol} ({period}) from Alpha Vantage")
             
-            # Get daily data
-            data, meta_data = self.ts.get_daily(symbol=symbol, outputsize='compact')
+            if period in ['1d', '5d']:
+                # Fetch Intraday Data
+                interval = '1min' if period == '1d' else '5min'
+                # outputsize=full is needed to get enough data for filtering, 
+                # but compact might be enough for 1d. Let's use full to be safe for 5d.
+                # However, full returns 2MB+ of data, which is slow.
+                # For 1d, 'compact' returns latest 100 data points. 100 mins = 1h 40m. Not enough for full day.
+                # So we must use 'full' unfortunately, or accept 'compact' limitation.
+                # Let's use 'full' but cache it.
+                
+                url = f"https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol={symbol}&interval={interval}&outputsize=full&entitlement=realtime&apikey={self.api_key}"
+                
+                try:
+                    response = requests.get(url, timeout=10)
+                    if response.status_code != 200:
+                        logger.error(f"Alpha Vantage API error: {response.status_code}")
+                        return None
+                        
+                    data_json = response.json()
+                     # Check for API error
+                    if "Error Message" in data_json:
+                        logger.error(f"API Error: {data_json['Error Message']}")
+                        return None
+                    
+                    time_series_key = f"Time Series ({interval})"
+                    raw_data = data_json.get(time_series_key)
+                    if not raw_data:
+                        logger.error(f"No {time_series_key} returned for {symbol}")
+                        return None
+                    
+                    # Filter data based on period
+                    filtered_data = {}
+                    import pytz
+                    est = pytz.timezone('US/Eastern')
+                    now = datetime.now(est)
+                    
+                    cutoff_time = now
+                    if period == '1d':
+                        # Today's market open (9:30 AM EST)
+                        cutoff_time = now.replace(hour=9, minute=30, second=0, microsecond=0)
+                        # If currently before 9:30 AM, show previous day? No, show empty or pre-market if available.
+                        # API returns data with date-time keys.
+                        # Actually, keeping last 24h might be better if market is closed, or just current trading day.
+                        # Standard is: if market open, show today. If closed, show last session.
+                        
+                        # Simplification: Get data from the latest available date in the dataset
+                        latest_date_str = max(raw_data.keys()).split(' ')[0]
+                        cutoff_str = f"{latest_date_str} 09:30:00"
+                        
+                    elif period == '5d':
+                        # Last 5 days
+                        cutoff_time = now - timedelta(days=5)
+                        cutoff_str = cutoff_time.strftime("%Y-%m-%d %H:%M:%S")
+
+                    for timestamp, values in raw_data.items():
+                        if period == '1d':
+                            # Strict string comparison for 1D to keep only the latest day
+                            if timestamp >= cutoff_str:
+                                filtered_data[timestamp] = values
+                        else:
+                            # String comparison works for ISO format
+                            if timestamp >= cutoff_str:
+                                filtered_data[timestamp] = values
+                    
+                    # If 1d filtered result is empty (e.g. before 9:30), 
+                    # fallback to previous day? Or just return empty to show "Market not open yet"?
+                    # Let's return what we have. If empty, maybe show last 100 points?
+                    if not filtered_data and period == '1d':
+                        # Fallback: take last 78 points (approx 1 trading day is 390 mins, but compact is 100)
+                        # Let's just return the last 390 points (full trading day)
+                        sorted_keys = sorted(raw_data.keys(), reverse=True)
+                        for key in sorted_keys[:390]:
+                             filtered_data[key] = raw_data[key]
+
+                    data = filtered_data
+                    
+                except Exception as req_err:
+                    logger.error(f"Request failed: {req_err}")
+                    return None
+
+            else:
+                # Get daily data (Existing Logic)
+                data, meta_data = self.ts.get_daily(symbol=symbol, outputsize='compact')
             
             if not data:
                 logger.error(f"No historical data returned for {symbol}")

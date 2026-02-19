@@ -9,6 +9,14 @@ const api = axios.create({
   },
 });
 
+// Add cache busting for GET requests
+api.interceptors.request.use((config) => {
+  if (config.method === 'get') {
+    config.params = { ...config.params, _t: Date.now() };
+  }
+  return config;
+});
+
 // Types
 export interface Portfolio {
   id: number;
@@ -104,16 +112,16 @@ export interface APIResponse {
 export const portfolioAPI = {
   getPortfolio: (): Promise<Portfolio> =>
     api.get('/api/portfolio/').then(res => res.data),
-  
+
   getPortfolioSummary: (): Promise<PortfolioSummary> =>
     api.get('/api/portfolio/summary').then(res => res.data),
-  
+
   getHoldings: (): Promise<Holding[]> =>
     api.get('/api/portfolio/holdings').then(res => res.data),
-  
+
   getTradingStats: (): Promise<TradingStats> =>
     api.get('/api/portfolio/stats').then(res => res.data),
-  
+
   initializePortfolio: (): Promise<APIResponse> =>
     api.post('/api/portfolio/initialize').then(res => res.data),
 };
@@ -122,19 +130,19 @@ export const portfolioAPI = {
 export const stocksAPI = {
   getStockInfo: (symbol: string): Promise<StockInfo> =>
     api.get(`/api/stocks/${symbol}`).then(res => res.data),
-  
+
   getStockPrice: (symbol: string): Promise<{ symbol: string; price: number; timestamp: string }> =>
     api.get(`/api/stocks/${symbol}/price`).then(res => res.data),
-  
+
   getStockHistory: (symbol: string, period: string = '1mo'): Promise<any> =>
     api.get(`/api/stocks/${symbol}/history?period=${period}`).then(res => res.data),
-  
+
   getTrendingStocks: (): Promise<{ trending_symbols: string[]; stocks_info: StockInfo[] }> =>
     api.get('/api/stocks/market/trending').then(res => res.data),
-  
+
   getMarketStatus: (): Promise<any> =>
     api.get('/api/stocks/market/status').then(res => res.data),
-  
+
   validateSymbol: (symbol: string): Promise<APIResponse> =>
     api.post(`/api/stocks/validate/${symbol}`).then(res => res.data),
 };
@@ -143,25 +151,25 @@ export const stocksAPI = {
 export const botAPI = {
   getBotConfig: (): Promise<BotConfig> =>
     api.get('/api/bot/config').then(res => res.data),
-  
+
   updateBotConfig: (config: Partial<BotConfig>): Promise<BotConfig> =>
     api.put('/api/bot/config', config).then(res => res.data),
-  
+
   getBotStatus: (): Promise<BotStatus> =>
     api.get('/api/bot/status').then(res => res.data),
-  
+
   startBot: (): Promise<APIResponse> =>
     api.post('/api/bot/start').then(res => res.data),
-  
+
   stopBot: (): Promise<APIResponse> =>
     api.post('/api/bot/stop').then(res => res.data),
-  
+
   analyzeStock: (symbol: string): Promise<APIResponse> =>
     api.post(`/api/bot/analyze/${symbol}`).then(res => res.data),
-  
+
   executeAITrade: (symbol: string): Promise<APIResponse> =>
     api.post(`/api/bot/execute-trade/${symbol}`).then(res => res.data),
-  
+
   getMarketSentiment: (): Promise<APIResponse> =>
     api.get('/api/bot/market-sentiment').then(res => res.data),
 };
@@ -170,22 +178,22 @@ export const botAPI = {
 export const tradesAPI = {
   getTradingHistory: (limit: number = 50, offset: number = 0): Promise<Trade[]> =>
     api.get(`/api/trades/?limit=${limit}&offset=${offset}`).then(res => res.data),
-  
+
   getTodaysTrades: (): Promise<Trade[]> =>
     api.get('/api/trades/today').then(res => res.data),
-  
+
   getTodaysTradeCount: (): Promise<{ trades_today: number; date: string }> =>
     api.get('/api/trades/count/today').then(res => res.data),
-  
+
   getTradesBySymbol: (symbol: string, limit: number = 50): Promise<Trade[]> =>
     api.get(`/api/trades/by-symbol/${symbol}?limit=${limit}`).then(res => res.data),
-  
+
   getTradeById: (tradeId: number): Promise<Trade> =>
     api.get(`/api/trades/${tradeId}`).then(res => res.data),
-  
+
   getTradeSummary: (): Promise<TradingStats> =>
     api.get('/api/trades/stats/summary').then(res => res.data),
-  
+
   getDailyPerformance: (): Promise<any> =>
     api.get('/api/trades/performance/daily').then(res => res.data),
 };
@@ -194,16 +202,16 @@ export const tradesAPI = {
 export const logsAPI = {
   getActivityLogs: (limit: number = 20, hours: number = 24): Promise<any> =>
     api.get(`/api/logs/activity?limit=${limit}&hours=${hours}`).then(res => res.data),
-  
+
   addActivityLog: (level: string, message: string, symbol?: string, trade_id?: number): Promise<APIResponse> =>
     api.post('/api/logs/activity', { level, message, symbol, trade_id }).then(res => res.data),
-  
+
   clearActivityLogs: (days: number = 7): Promise<APIResponse> =>
     api.delete(`/api/logs/activity?days=${days}`).then(res => res.data),
-  
+
   getDebugInfo: (limit: number = 50): Promise<any> =>
     api.get(`/api/logs/debug?limit=${limit}`).then(res => res.data),
-  
+
   getSystemStatus: (): Promise<any> =>
     api.get('/api/logs/system-status').then(res => res.data),
 };

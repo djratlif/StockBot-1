@@ -29,6 +29,7 @@ const Dashboard: React.FC = () => {
   const [tradingStats, setTradingStats] = useState<TradingStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
 
   const fetchDashboardData = async () => {
     try {
@@ -44,6 +45,7 @@ const Dashboard: React.FC = () => {
       setPortfolioSummary(portfolio);
       setBotStatus(bot);
       setTradingStats(stats);
+      setLastUpdated(new Date());
     } catch (err) {
       setError('Failed to load dashboard data');
       console.error('Dashboard error:', err);
@@ -72,7 +74,7 @@ const Dashboard: React.FC = () => {
 
   useEffect(() => {
     fetchDashboardData();
-    // Refresh data every minute (60000ms) for real-time updates
+    // Refresh data every minute (60000ms) to match Alpha Vantage update availability and avoid rate limits
     const interval = setInterval(fetchDashboardData, 60000);
     return () => clearInterval(interval);
   }, []);
@@ -205,6 +207,9 @@ const Dashboard: React.FC = () => {
               </Box>
               <Typography variant="body2" color="textSecondary">
                 The bot will automatically trade during market hours when active.
+              </Typography>
+              <Typography variant="caption" display="block" sx={{ mt: 1, color: 'text.disabled' }}>
+                Last updated: {lastUpdated.toLocaleTimeString()}
               </Typography>
             </CardContent>
           </Card>

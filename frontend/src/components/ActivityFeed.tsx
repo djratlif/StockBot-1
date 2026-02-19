@@ -14,6 +14,8 @@ import {
   Tooltip,
 } from '@mui/material';
 import {
+  TrendingUp,
+  TrendingDown,
   CheckCircle,
   Error,
   Info,
@@ -40,13 +42,13 @@ const ActivityFeed: React.FC = () => {
   const fetchActivities = async () => {
     try {
       setLoading(true);
-      
+
       // Import the logsAPI
       const { logsAPI } = await import('../services/api');
-      
+
       // Fetch real activity logs from backend
       const response = await logsAPI.getActivityLogs(25, 24);
-      
+
       if (response.success && response.data) {
         setActivities(response.data);
       } else {
@@ -135,6 +137,10 @@ const ActivityFeed: React.FC = () => {
         return <Error sx={{ color: 'error.main', fontSize: 20 }} />;
       case 'WARNING':
         return <Warning sx={{ color: 'warning.main', fontSize: 20 }} />;
+      case 'PORTFOLIO_UP':
+        return <TrendingUp sx={{ color: 'success.main', fontSize: 20 }} />;
+      case 'PORTFOLIO_DOWN':
+        return <TrendingDown sx={{ color: 'error.main', fontSize: 20 }} />;
       default:
         return <Info sx={{ color: 'info.main', fontSize: 20 }} />;
     }
@@ -148,6 +154,10 @@ const ActivityFeed: React.FC = () => {
         return 'error.main';
       case 'WARNING':
         return 'warning.main';
+      case 'PORTFOLIO_UP':
+        return 'success.main';
+      case 'PORTFOLIO_DOWN':
+        return 'error.main';
       default:
         return 'text.primary';
     }
@@ -155,7 +165,7 @@ const ActivityFeed: React.FC = () => {
 
   useEffect(() => {
     fetchActivities();
-    
+
     // Refresh activities every 5 seconds
     const interval = setInterval(fetchActivities, 5000);
     return () => clearInterval(interval);
@@ -183,10 +193,10 @@ const ActivityFeed: React.FC = () => {
           ) : (
             <List dense>
               {activities.map((activity) => (
-                <ListItem 
-                  key={activity.id} 
-                  sx={{ 
-                    px: 0, 
+                <ListItem
+                  key={activity.id}
+                  sx={{
+                    px: 0,
                     py: 1,
                     borderBottom: '1px solid',
                     borderColor: 'divider',

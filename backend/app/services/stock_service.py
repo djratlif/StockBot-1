@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class StockService:
     def __init__(self):
         self.cache = {}
-        self.cache_duration = timedelta(minutes=1)  # Cache for 1 minute
+        self.cache_duration = timedelta(seconds=55)  # Cache for 55s to ensure expiry before 60s frontend poll
     
     async def get_stock_info(self, symbol: str, db_session=None) -> Optional[StockInfo]:
         """Get comprehensive stock information using Alpha Vantage only"""
