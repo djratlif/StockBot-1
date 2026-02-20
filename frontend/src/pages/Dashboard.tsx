@@ -110,13 +110,13 @@ const Dashboard: React.FC = () => {
           <Card>
             <CardContent>
               <Box display="flex" alignItems="center" mb={2}>
-                <AccountBalance color="primary" sx={{ mr: 1 }} />
-                <Typography variant="h6">Portfolio Value</Typography>
+                <AccountBalance sx={{ mr: 1, color: '#ffffff' }} />
+                <Typography variant="h6" sx={{ color: '#ffffff' }}>Portfolio Value</Typography>
               </Box>
-              <Typography variant="h4" color="primary">
+              <Typography variant="h4" sx={{ color: '#ffffff' }}>
                 ${portfolioSummary?.total_value.toFixed(2) || '0.00'}
               </Typography>
-              <Typography variant="body2" color="textSecondary">
+              <Typography variant="body2" sx={{ color: '#ffffff' }}>
                 Cash: ${portfolioSummary?.cash_balance.toFixed(2) || '0.00'}
               </Typography>
             </CardContent>
@@ -133,7 +133,7 @@ const Dashboard: React.FC = () => {
                 ) : (
                   <TrendingDown color="error" sx={{ mr: 1 }} />
                 )}
-                <Typography variant="h6">Total Return</Typography>
+                <Typography variant="h6" sx={{ color: '#ffffff' }}>Total Return</Typography>
               </Box>
               <Typography
                 variant="h4"
@@ -144,7 +144,7 @@ const Dashboard: React.FC = () => {
               <Typography variant="body2" color={(portfolioSummary?.daily_change || 0) >= 0 ? 'success.main' : 'error.main'}>
                 Daily: {(portfolioSummary?.daily_change || 0) >= 0 ? '+' : ''}${portfolioSummary?.daily_change?.toFixed(2) || '0.00'} ({(portfolioSummary?.daily_change_percent || 0).toFixed(2)}%)
               </Typography>
-              <Typography variant="body2" color="textSecondary">
+              <Typography variant="body2" sx={{ color: '#ffffff' }}>
                 Total: {portfolioSummary?.return_percentage.toFixed(2) || '0.00'}%
               </Typography>
             </CardContent>
@@ -298,13 +298,13 @@ const Dashboard: React.FC = () => {
           <Card>
             <CardContent>
               <Box display="flex" alignItems="center" mb={2}>
-                <ShowChart color="primary" sx={{ mr: 1 }} />
-                <Typography variant="h6">Win Rate</Typography>
+                <ShowChart sx={{ mr: 1, color: '#ffffff' }} />
+                <Typography variant="h6" sx={{ color: '#ffffff' }}>Win Rate</Typography>
               </Box>
-              <Typography variant="h4" color="primary">
+              <Typography variant="h4" sx={{ color: '#ffffff' }}>
                 {tradingStats?.win_rate.toFixed(1) || '0.0'}%
               </Typography>
-              <Typography variant="body2" color="textSecondary">
+              <Typography variant="body2" sx={{ color: '#ffffff' }}>
                 {tradingStats?.winning_trades || 0}W / {tradingStats?.losing_trades || 0}L
               </Typography>
             </CardContent>
