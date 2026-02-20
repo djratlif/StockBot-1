@@ -6,7 +6,7 @@ import pytz
 from sqlalchemy.orm import Session
 
 from app.models.database import SessionLocal
-from app.models.models import BotConfig, ActivityLog
+from app.models.models import BotConfig, ActivityLog, AllocationType
 from app.services.ai_service import ai_service
 from app.services.portfolio_service import portfolio_service
 from app.services.stock_service import stock_service
@@ -71,11 +71,11 @@ class TradingBotService:
                     else:
                         logger.info(f"Market is open (Current time: {market_status.get('current_time', 'Unknown')})")
                     
-                    # Check if we can make more trades today
-                    if not portfolio_service.can_make_trade(db, config.max_daily_trades):
-                        logger.info("Daily trade limit reached, waiting until tomorrow")
-                        await asyncio.sleep(3600)  # Wait 1 hour before checking again
-                        continue
+                    # Daily trade limit check removed as per user request
+                    # if not portfolio_service.can_make_trade(db, config.max_daily_trades):
+                    #     logger.info("Daily trade limit reached, waiting until tomorrow")
+                    #     await asyncio.sleep(3600)  # Wait 1 hour before checking again
+                    #     continue
                     
                     # Perform trading analysis and execution
                     await self._analyze_and_trade(db, config)
@@ -124,13 +124,26 @@ class TradingBotService:
             
             # Analyze each stock and collect decisions with timeout
             trading_decisions = []
+            
+            # Calculate usable cash based on portfolio allocation
+            allocation_type = getattr(config, 'portfolio_allocation_type', AllocationType.PERCENTAGE)
+            invested = sum(h['quantity'] * h['current_price'] for h in current_holdings.values())
+            
+            if allocation_type.value == 'FIXED_AMOUNT':
+                allocated_limit = getattr(config, 'portfolio_allocation_amount', 2000.0)
+            else:
+                actual_allocation = getattr(config, 'portfolio_allocation', 1.0)
+                allocated_limit = portfolio.total_value * actual_allocation
+                
+            usable_cash = min(portfolio.cash_balance, max(0.0, allocated_limit - invested))
+            
             for symbol in stocks_to_analyze:
                 try:
                     # Add timeout to prevent hanging on API calls
                     decision = await asyncio.wait_for(
                         ai_service.analyze_stock_for_trading(
                             symbol=symbol,
-                            portfolio_cash=portfolio.cash_balance,
+                            portfolio_cash=usable_cash,
                             current_holdings=current_holdings,
                             portfolio_value=portfolio.total_value,
                             risk_tolerance=config.risk_tolerance,
@@ -197,16 +210,17 @@ class TradingBotService:
             trading_decisions.sort(key=lambda x: x.confidence, reverse=True)
             
             executed_trades = 0
-            max_trades_per_cycle = min(2, config.max_daily_trades)  # Limit trades per cycle
+            max_trades_per_cycle = 5  # Allow up to 5 trades per cycle
+
             
             for decision in trading_decisions[:max_trades_per_cycle]:
                 try:
-                    # Double-check we can still make trades
-                    if not portfolio_service.can_make_trade(db, config.max_daily_trades):
-                        break
+                    # Double-check we can still make trades - REMOVED LIMIT
+                    # if not portfolio_service.can_make_trade(db, config.max_daily_trades):
+                    #     break
                     
-                    # Validate the decision
-                    if not ai_service.validate_trading_decision(decision, portfolio.cash_balance, current_holdings):
+                    # Validate the decision using the newly calculated usable cash
+                    if not ai_service.validate_trading_decision(decision, usable_cash, current_holdings):
                         logger.warning(f"Invalid trading decision for {decision.symbol}")
                         continue
                     

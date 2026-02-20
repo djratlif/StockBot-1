@@ -95,8 +95,9 @@ async def get_bot_status(db: Session = Depends(get_db)):
         # Get market status
         market_status = stock_service.get_market_status()
         
-        # Get today's trade count
-        trades_today = portfolio_service.get_trades_today(db)
+        # Get today"s trade count details
+        trade_counts = portfolio_service.get_todays_trade_counts(db)
+        trades_today = trade_counts["total"]
         
         # Get last trade time
         from app.models.models import Trades
@@ -116,6 +117,8 @@ async def get_bot_status(db: Session = Depends(get_db)):
             is_active=config.is_active,
             is_trading_hours=market_status.get("is_open", False),
             trades_today=trades_today,
+            trades_bought_today=trade_counts["bought"],
+            trades_sold_today=trade_counts["sold"],
             max_daily_trades=config.max_daily_trades,
             cash_available=portfolio.cash_balance,
             portfolio_value=portfolio.total_value,

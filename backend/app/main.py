@@ -8,7 +8,7 @@ from app.config import settings
 from app.models.database import engine, Base, get_db
 from app.models.models import Portfolio, BotConfig
 from app.services.portfolio_service import portfolio_service
-from app.routers import portfolio, stocks, bot, trades, logs, alpha_vantage, auth
+from app.routers import portfolio, stocks, bot, trades, logs, auth
 from sqlalchemy.orm import Session
 
 # Configure logging
@@ -59,7 +59,6 @@ app.include_router(stocks.router, prefix="/api/stocks", tags=["stocks"])
 app.include_router(bot.router, prefix="/api/bot", tags=["bot"])
 app.include_router(trades.router, prefix="/api/trades", tags=["trades"])
 app.include_router(logs.router, prefix="/api/logs", tags=["logs"])
-app.include_router(alpha_vantage.router, prefix="/api/alpha-vantage", tags=["alpha-vantage"])
 
 @app.get("/")
 async def root():

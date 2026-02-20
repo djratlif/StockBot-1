@@ -11,6 +11,11 @@ class Settings(BaseSettings):
     alpha_vantage_api_key: Optional[str] = None
     polygon_api_key: Optional[str] = None
     
+    # Alpaca API
+    alpaca_api_key: Optional[str] = None
+    alpaca_secret_key: Optional[str] = None
+    alpaca_endpoint: str = "https://paper-api.alpaca.markets"
+    
     # Google OAuth
     google_client_id: Optional[str] = None
     google_client_secret: Optional[str] = None

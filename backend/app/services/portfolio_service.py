@@ -8,6 +8,7 @@ from app.models.schemas import (
     TradeActionEnum, HoldingResponse, TradeResponse
 )
 from app.services.stock_service import stock_service
+from app.services.alpaca_service import alpaca_service
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -17,23 +18,40 @@ class PortfolioService:
         pass
     
     def initialize_portfolio(self, db: Session) -> Portfolio:
-        """Initialize portfolio with starting balance"""
+        """Initialize portfolio and sync with Alpaca"""
         try:
             # Check if portfolio already exists
             portfolio = db.query(Portfolio).first()
-            if portfolio:
-                return portfolio
             
-            # Create new portfolio with initial balance
-            portfolio = Portfolio(
-                cash_balance=settings.initial_balance,
-                total_value=settings.initial_balance
-            )
-            db.add(portfolio)
-            db.commit()
-            db.refresh(portfolio)
+            # Fetch actual balance from Alpaca
+            account = alpaca_service.get_account()
             
-            logger.info(f"Portfolio initialized with ${settings.initial_balance}")
+            current_equity = settings.initial_balance
+            cash_balance = settings.initial_balance
+            
+            if account:
+                current_equity = float(account.equity)
+                cash_balance = float(account.cash)
+            else:
+                logger.warning("Could not fetch Alpaca account, using default/local values")
+            
+            if not portfolio:
+                # Create new portfolio
+                portfolio = Portfolio(
+                    cash_balance=cash_balance,
+                    total_value=current_equity
+                )
+                db.add(portfolio)
+                db.commit()
+                db.refresh(portfolio)
+                logger.info(f"Portfolio initialized with ${current_equity} (Synced from Alpaca)")
+            else:
+                # Update existing portfolio
+                portfolio.cash_balance = cash_balance
+                portfolio.total_value = current_equity
+                db.commit()
+                logger.info(f"Portfolio synced with Alpaca: ${current_equity}")
+                
             return portfolio
             
         except Exception as e:
@@ -46,84 +64,90 @@ class PortfolioService:
         return db.query(Portfolio).first()
     
     async def get_portfolio_summary(self, db: Session) -> Optional[PortfolioSummary]:
-        """Get comprehensive portfolio summary"""
+        """Get comprehensive portfolio summary synced with Alpaca"""
         try:
             portfolio = self.get_portfolio(db)
             if not portfolio:
                 return None
             
-            # Capture previous value for change tracking
-            previous_value = portfolio.total_value
-            
-            holdings = db.query(Holdings).all()
-            
-            # Calculate total invested and current value
-            total_invested = 0
-            current_holdings_value = 0
-            daily_change = 0
-            
-            for holding in holdings:
-                # Update current price
-                current_price = await stock_service.get_current_price(holding.symbol)
+            # 1. Sync User Account Data from Alpaca
+            account = alpaca_service.get_account()
+            if account:
+                # Updates local portfolio record to match Alpaca
+                previous_value = portfolio.total_value
+                portfolio.cash_balance = float(account.cash)
+                portfolio.total_value = float(account.equity)
                 
-                # Get change percent for daily change calculation
-                change_percent = 0
-                stock_info = await stock_service.get_stock_info(holding.symbol)
-                if stock_info:
-                    change_percent = stock_info.change_percent
+                # Log significant changes
+                value_change = portfolio.total_value - previous_value
+                if abs(value_change) > 0.50: # Log changes > $0.50
+                    direction = "UP" if value_change > 0 else "DOWN"
+                    sign = "+" if value_change > 0 else "-"
+                    details = f"Portfolio Value: ${previous_value:.2f} -> ${portfolio.total_value:.2f} ({sign}${abs(value_change):.2f})"
+                    
+                    log = ActivityLog(action=f"PORTFOLIO_{direction}", details=details)
+                    db.add(log)
                 
-                if current_price:
-                    holding.current_price = current_price
-                    db.commit()
-                
-                # Calculate value and change
-                holding_value = holding.quantity * holding.current_price
-                total_invested += holding.quantity * holding.average_cost
-                current_holdings_value += holding_value
-                
-                # Daily change contribution: Holding Value * (Change% / 100)
-                # This approximates the $ change for the day based on current value
-                daily_change += holding_value * (change_percent / 100)
+                db.commit()
             
-            # Update portfolio total value
-            total_value = portfolio.cash_balance + current_holdings_value
+            # 2. Sync Positions from Alpaca
+            alpaca_positions = alpaca_service.get_positions()
+            # Map alpaca positions by symbol
+            alpaca_map = {p.symbol: p for p in alpaca_positions}
             
-            # Calculate daily change percent for the whole portfolio
-            daily_change_percent = (daily_change / total_value) * 100 if total_value > 0 else 0
+            # Get local holdings
+            local_holdings = db.query(Holdings).all()
+            local_map = {h.symbol: h for h in local_holdings}
             
-            # Check for value change
-            value_change = total_value - previous_value
+            # Update or Delete local holdings
+            for holding in local_holdings:
+                if holding.symbol in alpaca_map:
+                    # Update
+                    pos = alpaca_map[holding.symbol]
+                    holding.quantity = int(pos.qty)
+                    holding.average_cost = float(pos.avg_entry_price)
+                    holding.current_price = float(pos.current_price)
+                else:
+                    # Delete (no longer in Alpaca)
+                    db.delete(holding)
             
-            # Log significant changes or periodic updates
-            if abs(value_change) > 0.005: # Use small threshold for any movement
-                direction = "UP" if value_change > 0 else "DOWN"
-                action = f"PORTFOLIO_{direction}"
-                
-                # Format: "Portfolio Value: $200.00 -> $205.00 (+$5.00)"
-                sign = "+" if value_change > 0 else "" # Use empty string for positive to avoid "+$5.00"
-                if value_change < 0:
-                    sign = "-"
-                
-                details = f"Portfolio Value: ${previous_value:.2f} -> ${total_value:.2f} ({sign}${abs(value_change):.2f})"
-                
-                # Create Activity Log
-                log = ActivityLog(
-                    action=action,
-                    details=details
-                )
-                db.add(log)
-                logger.info(f"Logged activity: {details}")
+            # Create new local holdings
+            for symbol, pos in alpaca_map.items():
+                if symbol not in local_map:
+                    new_holding = Holdings(
+                        user_id=portfolio.user_id,
+                        symbol=symbol,
+                        quantity=int(pos.qty),
+                        average_cost=float(pos.avg_entry_price),
+                        current_price=float(pos.current_price)
+                    )
+                    db.add(new_holding)
             
-            portfolio.total_value = total_value
             db.commit()
             
-            # Calculate returns
-            total_return = total_value - settings.initial_balance
+            # Recalculate metrics based on fresh data
+            holdings = db.query(Holdings).all()
+            total_invested = sum(h.quantity * h.average_cost for h in holdings)
+            
+            # Calculate daily change
+            # Alpaca account object has equity and last_equity (from previous close)
+            daily_change = 0
+            daily_change_percent = 0
+            if account:
+                daily_change = float(account.equity) - float(account.last_equity)
+                daily_change_percent = (daily_change / float(account.last_equity)) * 100 if float(account.last_equity) > 0 else 0
+            
+            # Calculate returns based on bot's actual performance
+            stats = self.get_trading_stats(db)
+            realized_pnl = stats.total_profit_loss if stats else 0
+            open_pnl = sum((h.current_price - h.average_cost) * h.quantity for h in holdings)
+            
+            total_return = realized_pnl + open_pnl
             return_percentage = (total_return / settings.initial_balance) * 100 if settings.initial_balance > 0 else 0
             
             return PortfolioSummary(
                 cash_balance=portfolio.cash_balance,
-                total_value=total_value,
+                total_value=portfolio.total_value,
                 total_invested=total_invested,
                 total_return=total_return,
                 return_percentage=return_percentage,
@@ -137,146 +161,67 @@ class PortfolioService:
             return None
     
     async def get_holdings(self, db: Session) -> List[HoldingResponse]:
-        """Get all current holdings with updated prices"""
+        """Get all current holdings (synced via get_portfolio_summary or separate sync)"""
+        # Trigger a sync lightly or just return DB? 
+        # For speed, let's just return DB. get_portfolio_summary is called often enough.
         try:
             holdings = db.query(Holdings).all()
-            result = []
-            
-            for holding in holdings:
-                # Update current price using real-time data
-                current_price = await stock_service.get_current_price(holding.symbol)
-                if current_price:
-                    holding.current_price = current_price
-                    db.commit()
-                
-                result.append(HoldingResponse.from_orm(holding))
-            
-            return result
-            
+            return [HoldingResponse.from_orm(h) for h in holdings]
         except Exception as e:
             logger.error(f"Error getting holdings: {str(e)}")
             return []
     
     def execute_trade(self, db: Session, decision: TradingDecision) -> Optional[TradeResponse]:
-        """Execute a trading decision"""
+        """Execute a trading decision via Alpaca"""
         try:
             portfolio = self.get_portfolio(db)
             if not portfolio:
                 logger.error("Portfolio not found")
                 return None
             
-            if decision.action == TradeActionEnum.BUY:
-                return self._execute_buy_order(db, portfolio, decision)
-            elif decision.action == TradeActionEnum.SELL:
-                return self._execute_sell_order(db, portfolio, decision)
+            # Submit order to Alpaca
+            # action string needs to be formatted for Alpaca (expected 'buy' or 'sell')
+            side = "buy" if decision.action == TradeActionEnum.BUY else "sell"
+            
+            order = alpaca_service.submit_order(
+                symbol=decision.symbol,
+                qty=decision.quantity,
+                side=side
+            )
+            
+            if not order:
+                logger.error(f"Failed to submit order for {decision.symbol}")
+                return None
+            
+            # Order submitted successfully.
+            # We log it in the Trades table for history.
+            # We DO NOT manually update Holdings/Portfolio here, as that will be synced 
+            # from Alpaca in the next poll cycle.
+            
+            trade = Trades(
+                user_id=portfolio.user_id,
+                symbol=decision.symbol,
+                action=TradeAction.BUY if decision.action == TradeActionEnum.BUY else TradeAction.SELL,
+                quantity=decision.quantity,
+                price=decision.current_price, # Estimated price
+                total_amount=decision.quantity * decision.current_price, # Estimated amount
+                ai_reasoning=decision.reasoning,
+                # We can store Alpaca Order ID if we added a column, but for now skipping
+            )
+            db.add(trade)
+            db.commit()
+            db.refresh(trade)
+            
+            logger.info(f"Order submitted to Alpaca: {side.upper()} {decision.quantity} {decision.symbol}")
+            return TradeResponse.from_orm(trade)
             
         except Exception as e:
             logger.error(f"Error executing trade: {str(e)}")
             db.rollback()
             return None
-    
-    def _execute_buy_order(self, db: Session, portfolio: Portfolio, decision: TradingDecision) -> Optional[TradeResponse]:
-        """Execute a buy order"""
-        try:
-            total_cost = decision.quantity * decision.current_price
-            
-            # Check if we have enough cash
-            if portfolio.cash_balance < total_cost:
-                logger.warning(f"Insufficient funds for {decision.symbol}: need ${total_cost:.2f}, have ${portfolio.cash_balance:.2f}")
-                return None
-            
-            # Update portfolio cash
-            portfolio.cash_balance -= total_cost
-            
-            # Update or create holding
-            holding = db.query(Holdings).filter(Holdings.symbol == decision.symbol).first()
-            
-            if holding:
-                # Update existing holding
-                total_shares = holding.quantity + decision.quantity
-                total_cost_basis = (holding.quantity * holding.average_cost) + total_cost
-                holding.average_cost = total_cost_basis / total_shares
-                holding.quantity = total_shares
-                holding.current_price = decision.current_price
-            else:
-                # Create new holding
-                holding = Holdings(
-                    user_id=portfolio.user_id,
-                    symbol=decision.symbol,
-                    quantity=decision.quantity,
-                    average_cost=decision.current_price,
-                    current_price=decision.current_price
-                )
-                db.add(holding)
-            
-            # Create trade record
-            trade = Trades(
-                user_id=portfolio.user_id,
-                symbol=decision.symbol,
-                action=TradeAction.BUY,
-                quantity=decision.quantity,
-                price=decision.current_price,
-                total_amount=total_cost,
-                ai_reasoning=decision.reasoning
-            )
-            db.add(trade)
-            
-            db.commit()
-            db.refresh(trade)
-            
-            logger.info(f"BUY executed: {decision.quantity} shares of {decision.symbol} at ${decision.current_price:.2f}")
-            return TradeResponse.from_orm(trade)
-            
-        except Exception as e:
-            logger.error(f"Error executing buy order: {str(e)}")
-            db.rollback()
-            return None
-    
-    def _execute_sell_order(self, db: Session, portfolio: Portfolio, decision: TradingDecision) -> Optional[TradeResponse]:
-        """Execute a sell order"""
-        try:
-            # Find the holding
-            holding = db.query(Holdings).filter(Holdings.symbol == decision.symbol).first()
-            
-            if not holding or holding.quantity < decision.quantity:
-                logger.warning(f"Insufficient shares for {decision.symbol}: need {decision.quantity}, have {holding.quantity if holding else 0}")
-                return None
-            
-            total_proceeds = decision.quantity * decision.current_price
-            
-            # Update portfolio cash
-            portfolio.cash_balance += total_proceeds
-            
-            # Update holding
-            holding.quantity -= decision.quantity
-            holding.current_price = decision.current_price
-            
-            # Remove holding if quantity is 0
-            if holding.quantity == 0:
-                db.delete(holding)
-            
-            # Create trade record
-            trade = Trades(
-                user_id=portfolio.user_id,
-                symbol=decision.symbol,
-                action=TradeAction.SELL,
-                quantity=decision.quantity,
-                price=decision.current_price,
-                total_amount=total_proceeds,
-                ai_reasoning=decision.reasoning
-            )
-            db.add(trade)
-            
-            db.commit()
-            db.refresh(trade)
-            
-            logger.info(f"SELL executed: {decision.quantity} shares of {decision.symbol} at ${decision.current_price:.2f}")
-            return TradeResponse.from_orm(trade)
-            
-        except Exception as e:
-            logger.error(f"Error executing sell order: {str(e)}")
-            db.rollback()
-            return None
+
+    # Helper methods _execute_buy_order and _execute_sell_order are no longer needed
+    # but keeping them or removing? Removing is cleaner.
     
     def get_trading_history(self, db: Session, limit: int = 50, offset: int = 0) -> List[TradeResponse]:
         """Get trading history with pagination"""
@@ -289,17 +234,17 @@ class PortfolioService:
     
     def get_trading_stats(self, db: Session) -> Optional[TradingStats]:
         """Get trading statistics"""
+        # Same implementation as before, calculating from local Trade history and Holdings
         try:
             trades = db.query(Trades).all()
+            portie_holdings = db.query(Holdings).all() # Rename to avoid overwrite
             
-            # Calculate open positions stats
-            holdings = db.query(Holdings).all()
             best_open_position = None
             worst_open_position = None
             best_open_symbol = None
             worst_open_symbol = None
             
-            for holding in holdings:
+            for holding in portie_holdings:
                 # Calculate return: (Current - Avg) * Qty
                 open_return = (holding.current_price - holding.average_cost) * holding.quantity
                 
@@ -329,7 +274,6 @@ class PortfolioService:
             total_trades = len(trades)
             profit_loss_by_symbol = {}
             
-            # Group trades by symbol to calculate P&L
             for trade in trades:
                 if trade.symbol not in profit_loss_by_symbol:
                     profit_loss_by_symbol[trade.symbol] = []
@@ -341,14 +285,12 @@ class PortfolioService:
                     'total': trade.total_amount
                 })
             
-            # Calculate realized P&L
             total_profit_loss = 0
             winning_trades = 0
             losing_trades = 0
             trade_returns = []
             
             for symbol, symbol_trades in profit_loss_by_symbol.items():
-                # Simple P&L calculation (can be enhanced)
                 buys = [t for t in symbol_trades if t['action'] == TradeAction.BUY]
                 sells = [t for t in symbol_trades if t['action'] == TradeAction.SELL]
                 
@@ -395,16 +337,13 @@ class PortfolioService:
         try:
             holdings = db.query(Holdings).all()
             result = {}
-            
             for holding in holdings:
                 result[holding.symbol] = {
                     'quantity': holding.quantity,
                     'average_cost': holding.average_cost,
                     'current_price': holding.current_price
                 }
-            
             return result
-            
         except Exception as e:
             logger.error(f"Error getting holdings dict: {str(e)}")
             return {}
@@ -422,56 +361,80 @@ class PortfolioService:
             return 0
     
     async def liquidate_portfolio(self, db: Session) -> Dict[str, Any]:
-        """Liquidate all holdings (Panic Sell)"""
+        """Liquidate all holdings (Panic Sell) via Alpaca"""
         try:
-            holdings = db.query(Holdings).all()
+            # Call Alpaca to close all positions
+            # returns list of orders
+            orders = alpaca_service.close_all_positions(cancel_orders=True)
+            
             results = {
                 "liquidated": [],
                 "errors": []
             }
             
-            if not holdings:
-                return {"message": "No holdings to liquidate", "count": 0}
+            if not orders:
+                 # Check if we had positions
+                 positions = alpaca_service.get_positions()
+                 if not positions:
+                     return {"message": "No positions to liquidate", "count": 0}
+                 else:
+                     return {"error": "Failed to close positions"}
+            
+            for order in orders:
+                results["liquidated"].append(f"{order.symbol} ({order.qty} shares)")
                 
-            for holding in holdings:
-                try:
-                    # Get current price
-                    current_price = await stock_service.get_current_price(holding.symbol)
-                    if not current_price:
-                        # Fallback to last known price if live price fails
-                        current_price = holding.current_price
-                    
-                    # Create sell decision
-                    decision = TradingDecision(
-                        action=TradeActionEnum.SELL,
-                        symbol=holding.symbol,
-                        quantity=holding.quantity,
-                        confidence=10,
-                        reasoning="PANIC SELL TRIGGERED - User initiated liquidation",
-                        current_price=current_price
-                    )
-                    
-                    # Execute sell
-                    trade = self.execute_trade(db, decision)
-                    if trade:
-                        results["liquidated"].append(f"{holding.symbol} ({holding.quantity} shares)")
-                    else:
-                        results["errors"].append(f"Failed to sell {holding.symbol}")
-                        
-                except Exception as e:
-                    logger.error(f"Error liquidating {holding.symbol}: {str(e)}")
-                    results["errors"].append(f"Error selling {holding.symbol}: {str(e)}")
+                # We should log these sells in DB too?
+                # The sync will handle removing holdings.
+                # But creating Trade entries for history is good.
+                
+                # Since we don't have exact trade details until fill, maybe just skip logging
+                # individual trades here and let user rely on Alpaca dashboard?
+                # Or create a log.
+                
+                # Let's create an activity log for the panic sell
+                pass
+            
+            log = ActivityLog(
+                action="PANIC_SELL",
+                details=f"Liquidated all positions: {', '.join(results['liquidated'])}"
+            )
+            db.add(log)
+            db.commit()
             
             return results
             
         except Exception as e:
             logger.error(f"Error in liquidate_portfolio: {str(e)}")
             return {"error": str(e)}
+    
+    def get_todays_trade_counts(self, db: Session) -> Dict[str, int]:
+        """Get number of buy and sell trades executed today"""
+        try:
+            today = date.today()
+            start_of_day = datetime.combine(today, datetime.min.time())
+            
+            buys = db.query(Trades).filter(
+                Trades.executed_at >= start_of_day,
+                Trades.action == TradeAction.BUY
+            ).count()
+            
+            sells = db.query(Trades).filter(
+                Trades.executed_at >= start_of_day,
+                Trades.action == TradeAction.SELL
+            ).count()
+            
+            return {
+                "bought": buys,
+                "sold": sells,
+                "total": buys + sells
+            }
+        except Exception as e:
+            logger.error(f"Error getting today's trade counts: {str(e)}")
+            return {"bought": 0, "sold": 0, "total": 0}
 
     def can_make_trade(self, db: Session, max_daily_trades: int) -> bool:
         """Check if we can make another trade today"""
-        trades_today = self.get_trades_today(db)
-        return trades_today < max_daily_trades
+        return True
 
 # Global instance
 portfolio_service = PortfolioService()

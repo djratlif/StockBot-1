@@ -12,6 +12,10 @@ class RiskToleranceEnum(str, Enum):
     MEDIUM = "MEDIUM"
     HIGH = "HIGH"
 
+class AllocationTypeEnum(str, Enum):
+    PERCENTAGE = "PERCENTAGE"
+    FIXED_AMOUNT = "FIXED_AMOUNT"
+
 # User Authentication Schemas
 class UserBase(BaseModel):
     email: str
@@ -97,8 +101,10 @@ class BotConfigBase(BaseModel):
     trading_hours_end: str = Field(default="16:00", pattern=r"^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$")
     is_active: bool = False
     stop_loss_percentage: float = Field(default=-0.10, ge=-1.0, le=0.0)
-    take_profit_percentage: float = Field(default=0.15, ge=0.0, le=5.0)
     min_cash_reserve: float = Field(default=5.00, ge=0.0)
+    portfolio_allocation: float = Field(default=1.0, ge=0.01, le=1.0)
+    portfolio_allocation_type: AllocationTypeEnum = AllocationTypeEnum.PERCENTAGE
+    portfolio_allocation_amount: float = Field(default=2000.0, ge=0.0)
 
 class BotConfigUpdate(BotConfigBase):
     pass
@@ -186,6 +192,8 @@ class BotStatus(BaseModel):
     is_active: bool
     is_trading_hours: bool
     trades_today: int
+    trades_bought_today: Optional[int] = 0
+    trades_sold_today: Optional[int] = 0
     max_daily_trades: int
     cash_available: float
     portfolio_value: float

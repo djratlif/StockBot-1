@@ -14,6 +14,10 @@ class RiskTolerance(enum.Enum):
     MEDIUM = "MEDIUM"
     HIGH = "HIGH"
 
+class AllocationType(enum.Enum):
+    PERCENTAGE = "PERCENTAGE"
+    FIXED_AMOUNT = "FIXED_AMOUNT"
+
 class User(Base):
     __tablename__ = "users"
     
@@ -87,9 +91,11 @@ class BotConfig(Base):
     trading_hours_start = Column(String(5), nullable=False, default="09:30")  # HH:MM format
     trading_hours_end = Column(String(5), nullable=False, default="16:00")    # HH:MM format
     is_active = Column(Boolean, nullable=False, default=False)
-    stop_loss_percentage = Column(Float, nullable=False, default=-0.10)  # -10%
     take_profit_percentage = Column(Float, nullable=False, default=0.15)  # +15%
     min_cash_reserve = Column(Float, nullable=False, default=5.00)
+    portfolio_allocation = Column(Float, nullable=False, default=1.0)  # 1.0 = 100%
+    portfolio_allocation_type = Column(Enum(AllocationType), nullable=False, default=AllocationType.PERCENTAGE)
+    portfolio_allocation_amount = Column(Float, nullable=False, default=2000.0)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
     # Relationships

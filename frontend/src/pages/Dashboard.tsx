@@ -9,6 +9,9 @@ import {
   Chip,
   Alert,
   CircularProgress,
+  Slider,
+  TextField,
+  InputAdornment,
 } from '@mui/material';
 import {
   TrendingUp,
@@ -20,7 +23,7 @@ import {
   Warning,
 } from '@mui/icons-material';
 import { portfolioAPI, botAPI, tradesAPI } from '../services/api';
-import type { PortfolioSummary, BotStatus, TradingStats } from '../services/api';
+import type { PortfolioSummary, BotStatus, TradingStats, BotConfig } from '../services/api';
 import ActivityFeed from '../components/ActivityFeed';
 
 
@@ -28,6 +31,7 @@ const Dashboard: React.FC = () => {
   const [portfolioSummary, setPortfolioSummary] = useState<PortfolioSummary | null>(null);
   const [botStatus, setBotStatus] = useState<BotStatus | null>(null);
   const [tradingStats, setTradingStats] = useState<TradingStats | null>(null);
+  const [botConfig, setBotConfig] = useState<BotConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
@@ -37,15 +41,17 @@ const Dashboard: React.FC = () => {
       setLoading(true);
       setError(null);
 
-      const [portfolio, bot, stats] = await Promise.all([
+      const [portfolio, bot, stats, configData] = await Promise.all([
         portfolioAPI.getPortfolioSummary().catch(() => null),
         botAPI.getBotStatus().catch(() => null),
         tradesAPI.getTradeSummary().catch(() => null),
+        botAPI.getBotConfig().catch(() => null),
       ]);
 
       setPortfolioSummary(portfolio);
       setBotStatus(bot);
       setTradingStats(stats);
+      setBotConfig(configData);
       setLastUpdated(new Date());
     } catch (err) {
       setError('Failed to load dashboard data');
@@ -167,8 +173,121 @@ const Dashboard: React.FC = () => {
               >
                 {botStatus?.is_active ? 'Stop Bot' : 'Start Bot'}
               </Button>
+              {botStatus?.is_active && (
+                <Button
+                  variant="contained"
+                  color="error"
+                  startIcon={<Warning />}
+                  onClick={async () => {
+                    if (window.confirm("ARE YOU SURE? This will stop the bot and SELL ALL HOLDINGS immediately!")) {
+                      try {
+                        await botAPI.panicSell();
+                        alert("PANIC SELL TRIGGERED: Bot stopped and all holdings are being liquidated.");
+                        fetchDashboardData();
+                      } catch (error) {
+                        alert("Error executing panic sell. Please check logs.");
+                      }
+                    }
+                  }}
+                  fullWidth
+                  sx={{ mb: 1, bgcolor: '#d32f2f', '&:hover': { bgcolor: '#b71c1c' } }}
+                >
+                  SELL ALL AND STOP BOT
+                </Button>
+              )}
+              <Box mt={2} mb={2}>
+                <Typography variant="body2" color="textSecondary" gutterBottom>
+                  Portfolio Allocation ({Math.round((botConfig?.portfolio_allocation || 1.0) * 100)}%)
+                </Typography>
+                <Box display="flex" alignItems="center" gap={3}>
+                  <Slider
+                    value={Math.round((botConfig?.portfolio_allocation || 1.0) * 100)}
+                    step={1}
+                    min={5}
+                    max={100}
+                    valueLabelDisplay="auto"
+                    onChange={(_, value) => {
+                      const newValue = (value as number) / 100;
+                      setBotConfig(prev => prev ? { ...prev, portfolio_allocation: newValue } : null);
+                    }}
+                    onChangeCommitted={async (_, value) => {
+                      const newValue = (value as number) / 100;
+                      // Update backend with % type
+                      try {
+                        const updated = await botAPI.updateBotConfig({ 
+                          portfolio_allocation_type: 'PERCENTAGE',
+                          portfolio_allocation: newValue 
+                        });
+                        setBotConfig(updated);
+                      } catch (err) {
+                        console.error('Failed to update allocation', err);
+                      }
+                    }}
+                    disabled={!botConfig}
+                    sx={{ flexGrow: 1 }}
+                  />
+                                    <TextField
+                      type="number"
+                      size="small"
+                      value={
+                        botConfig?.portfolio_allocation_type === 'FIXED_AMOUNT' 
+                          ? botConfig.portfolio_allocation_amount 
+                          : Math.round((portfolioSummary?.total_value || 0) * (botConfig?.portfolio_allocation || 1.0))
+                      }
+                      onChange={(e) => {
+                        // Allow typing local state without committing immediately
+                        const val = parseFloat(e.target.value);
+                        if (isNaN(val)) return;
+                        // Determine resulting percentage and round to nearest whole number
+                        const portValue = portfolioSummary?.total_value || 1;
+                        let percentage = Math.min(1.0, Math.max(0.01, val / portValue));
+                        percentage = Math.round(percentage * 100) / 100; // Round to whole percentage (e.g. 0.45)
+                        
+                        setBotConfig(prev => prev ? { 
+                          ...prev, 
+                          portfolio_allocation_type: 'FIXED_AMOUNT',
+                          portfolio_allocation_amount: val,
+                          portfolio_allocation: percentage
+                        } : null);
+                      }}
+                      onBlur={async (e) => {
+                        const val = parseFloat(e.target.value);
+                        if (isNaN(val) || val < 0) return;
+                        
+                        const portValue = portfolioSummary?.total_value || 1;
+                        let percentage = Math.min(1.0, Math.max(0.01, val / portValue));
+                        percentage = Math.round(percentage * 100) / 100; // Round to whole percent
+                        
+                        try {
+                          const updated = await botAPI.updateBotConfig({ 
+                            portfolio_allocation_type: 'FIXED_AMOUNT',
+                            portfolio_allocation_amount: val,
+                            portfolio_allocation: percentage
+                          });
+                          setBotConfig(updated);
+                        } catch (err) {
+                          console.error('Failed to update allocation amount', err);
+                        }
+                      }}
+                      InputProps={{
+                        startAdornment: <InputAdornment position="start">$</InputAdornment>,
+                      }}
+                      disabled={!botConfig || !portfolioSummary}
+                      sx={{ 
+                        width: '130px',
+                        '& input[type=number]': {
+                          MozAppearance: 'textfield',
+                        },
+                        '& input[type=number]::-webkit-outer-spin-button, & input[type=number]::-webkit-inner-spin-button': {
+                          WebkitAppearance: 'none',
+                          margin: 0,
+                        },
+                      }}
+                    />
+                </Box>
+              </Box>
               <Typography variant="body2" color="textSecondary">
-                Trades Today: {botStatus?.trades_today || 0}/{botStatus?.max_daily_trades || 0}
+                Today's Activity: {botStatus?.trades_bought_today || 0} Bought / {botStatus?.trades_sold_today || 0} Sold
               </Typography>
             </CardContent>
           </Card>
@@ -239,26 +358,7 @@ const Dashboard: React.FC = () => {
                 <Button variant="outlined" size="small" onClick={fetchDashboardData}>
                   Refresh Data
                 </Button>
-                <Button
-                  variant="contained"
-                  size="small"
-                  color="error"
-                  startIcon={<Warning />}
-                  onClick={async () => {
-                    if (window.confirm("ARE YOU SURE? This will stop the bot and SELL ALL HOLDINGS immediately!")) {
-                      try {
-                        await botAPI.panicSell();
-                        alert("PANIC SELL TRIGGERED: Bot stopped and all holdings are being liquidated.");
-                        fetchDashboardData();
-                      } catch (error) {
-                        alert("Error executing panic sell. Please check logs.");
-                      }
-                    }
-                  }}
-                  sx={{ bgcolor: '#d32f2f', '&:hover': { bgcolor: '#b71c1c' } }}
-                >
-                  SELL ALL AND STOP BOT
-                </Button>
+
               </Box>
             </CardContent>
           </Card>

@@ -134,19 +134,19 @@ const Navbar: React.FC = () => {
 
         {/* User Profile - Right aligned */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Tooltip title="Real Trading - Coming Soon">
+          <Tooltip title="Cash Trading - Coming Soon">
             <Box sx={{ display: 'flex', alignItems: 'center', mr: 2, backgroundColor: 'rgba(255, 255, 255, 0.05)', padding: '4px 12px', borderRadius: '4px' }}>
               <Typography variant="body2" sx={{ mr: 1, color: 'text.secondary', opacity: 0.7 }}>
-                Fake $
+                Paper Trading
               </Typography>
               <Switch
                 checked={false}
                 disabled
                 size="small"
-                inputProps={{ 'aria-label': 'toggle real trading' }}
+                inputProps={{ 'aria-label': 'toggle cash trading' }}
               />
               <Typography variant="body2" sx={{ ml: 1, color: 'text.disabled' }}>
-                Real $
+                Cash Trading
               </Typography>
             </Box>
           </Tooltip>

@@ -69,6 +69,9 @@ export interface BotConfig {
   stop_loss_percentage: number;
   take_profit_percentage: number;
   min_cash_reserve: number;
+  portfolio_allocation: number;
+  portfolio_allocation_type: 'PERCENTAGE' | 'FIXED_AMOUNT';
+  portfolio_allocation_amount: number;
   updated_at: string;
 }
 
@@ -76,6 +79,8 @@ export interface BotStatus {
   is_active: boolean;
   is_trading_hours: boolean;
   trades_today: number;
+  trades_bought_today?: number;
+  trades_sold_today?: number;
   max_daily_trades: number;
   cash_available: number;
   portfolio_value: number;
