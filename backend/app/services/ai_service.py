@@ -22,6 +22,8 @@ class AITradingService:
                                 portfolio_value: float,
                                 risk_tolerance: RiskToleranceEnum,
                                 max_position_size: float,
+                                allocation_exceeded: bool = False,
+                                allocation_overage: float = 0.0,
                                 db_session=None) -> Optional[TradingDecision]:
         """
         Analyze a stock and make a trading decision using AI
@@ -68,7 +70,9 @@ class AITradingService:
                 risk_tolerance=risk_tolerance,
                 max_position_size=max_position_size,
                 available_cash=available_cash,
-                historical_data=historical_data
+                historical_data=historical_data,
+                allocation_exceeded=allocation_exceeded,
+                allocation_overage=allocation_overage
             )
             
             # Get AI recommendation
@@ -107,7 +111,9 @@ class AITradingService:
                              risk_tolerance: RiskToleranceEnum,
                              max_position_size: float,
                              available_cash: float,
-                             historical_data) -> str:
+                             historical_data,
+                             allocation_exceeded: bool = False,
+                             allocation_overage: float = 0.0) -> str:
         """Build the prompt for AI analysis"""
         
         # Calculate some basic technical indicators from Alpha Vantage data format
@@ -116,7 +122,7 @@ class AITradingService:
             # Convert to lists for analysis
             dates = sorted(historical_data.keys())[-10:]  # Last 10 days
             recent_prices = [float(historical_data[date]['4. close']) for date in dates]
-            recent_volumes = [int(historical_data[date]['5. volume']) for date in dates]
+            recent_volumes = [int(float(historical_data[date]['5. volume'])) for date in dates]
             volume_avg = sum(recent_volumes) / len(recent_volumes) if recent_volumes else 0
             price_trend = "UPWARD" if recent_prices[-1] > recent_prices[0] else "DOWNWARD"
         except Exception as e:
@@ -130,6 +136,15 @@ class AITradingService:
         current_shares = current_position.get('quantity', 0)
         current_avg_cost = current_position.get('average_cost', 0)
         
+        allocation_directive = ""
+        if allocation_exceeded:
+            allocation_directive = f"""
+CRITICAL DIRECTIVE:
+Your current portfolio allocation limit has been EXCEEDED by ${allocation_overage:.2f}.
+Your ONLY permitted actions right now are to SELL existing holdings to bring the total value under the limit, or HOLD.
+Do NOT recommend any BUY actions under any circumstances until the portfolio is rebalanced.
+"""
+        
         prompt = f"""
 Analyze {stock_info.symbol} for a trading decision. You are managing a portfolio with virtual money for learning purposes.
 
@@ -139,6 +154,7 @@ CURRENT PORTFOLIO STATUS:
 - Risk Tolerance: {risk_tolerance.value}
 - Max Position Size: {max_position_size*100:.1f}% of portfolio
 - Available for this trade: ${available_cash:.2f}
+{allocation_directive}
 
 CURRENT POSITION IN {stock_info.symbol}:
 - Shares Owned: {current_shares}
@@ -311,9 +327,15 @@ Keep each analysis to one line.
     
     def validate_trading_decision(self, decision: TradingDecision, 
                                 portfolio_cash: float, 
-                                current_holdings: Dict) -> bool:
+                                current_holdings: Dict,
+                                allocation_exceeded: bool = False) -> bool:
         """Validate if a trading decision is feasible"""
         try:
+            # Block buys if allocation is exceeded
+            if decision.action == TradeActionEnum.BUY and allocation_exceeded:
+                logger.warning(f"Blocked BUY for {decision.symbol} due to exceeded allocation limit.")
+                return False
+                
             if decision.action == TradeActionEnum.BUY:
                 required_cash = decision.quantity * decision.current_price
                 return required_cash <= portfolio_cash

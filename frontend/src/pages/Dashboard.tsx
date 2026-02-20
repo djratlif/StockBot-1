@@ -25,7 +25,7 @@ import {
 import { portfolioAPI, botAPI, tradesAPI } from '../services/api';
 import type { PortfolioSummary, BotStatus, TradingStats, BotConfig } from '../services/api';
 import ActivityFeed from '../components/ActivityFeed';
-
+import AnimatedPrice from '../components/AnimatedPrice';
 
 const Dashboard: React.FC = () => {
   const [portfolioSummary, setPortfolioSummary] = useState<PortfolioSummary | null>(null);
@@ -36,9 +36,11 @@ const Dashboard: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
 
-  const fetchDashboardData = async () => {
+  const fetchDashboardData = async (showLoader = true) => {
     try {
-      setLoading(true);
+      if (showLoader) {
+        setLoading(true);
+      }
       setError(null);
 
       const [portfolio, bot, stats, configData] = await Promise.all([
@@ -53,11 +55,16 @@ const Dashboard: React.FC = () => {
       setTradingStats(stats);
       setBotConfig(configData);
       setLastUpdated(new Date());
+
+      if (showLoader) {
+        setLoading(false);
+      }
     } catch (err) {
       setError('Failed to load dashboard data');
       console.error('Dashboard error:', err);
-    } finally {
-      setLoading(false);
+      if (showLoader) {
+        setLoading(false);
+      }
     }
   };
 
@@ -80,9 +87,10 @@ const Dashboard: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchDashboardData();
-    // Refresh data every minute (60000ms) to match Alpha Vantage update availability and avoid rate limits
-    const interval = setInterval(fetchDashboardData, 60000);
+    // Initial fetch shows full-page loader
+    fetchDashboardData(true);
+    // Refresh data every 15 seconds silently
+    const interval = setInterval(() => fetchDashboardData(false), 15000);
     return () => clearInterval(interval);
   }, []);
 
@@ -113,12 +121,36 @@ const Dashboard: React.FC = () => {
                 <AccountBalance sx={{ mr: 1, color: '#ffffff' }} />
                 <Typography variant="h6" sx={{ color: '#ffffff' }}>Portfolio Value</Typography>
               </Box>
-              <Typography variant="h4" sx={{ color: '#ffffff' }}>
-                ${portfolioSummary?.total_value.toFixed(2) || '0.00'}
-              </Typography>
-              <Typography variant="body2" sx={{ color: '#ffffff' }}>
-                Cash: ${portfolioSummary?.cash_balance.toFixed(2) || '0.00'}
-              </Typography>
+              <AnimatedPrice
+                value={portfolioSummary?.total_value || 0}
+                prefix="$"
+                typographyVariant="h4"
+                color="#ffffff"
+              />
+              <Box display="flex" flexDirection="column" mt={1}>
+                <Box display="flex" alignItems="center">
+                  <Typography variant="body2" sx={{ color: '#ffffff', mr: 1 }}>
+                    Cash:
+                  </Typography>
+                  <AnimatedPrice
+                    value={portfolioSummary?.cash_balance || 0}
+                    prefix="$"
+                    typographyVariant="body2"
+                    color="#ffffff"
+                  />
+                </Box>
+                <Box display="flex" alignItems="center">
+                  <Typography variant="body2" sx={{ color: '#ffffff', mr: 1 }}>
+                    Holdings:
+                  </Typography>
+                  <AnimatedPrice
+                    value={(portfolioSummary?.total_value || 0) - (portfolioSummary?.cash_balance || 0)}
+                    prefix="$"
+                    typographyVariant="body2"
+                    color="#ffffff"
+                  />
+                </Box>
+              </Box>
             </CardContent>
           </Card>
         </Grid>
@@ -135,16 +167,27 @@ const Dashboard: React.FC = () => {
                 )}
                 <Typography variant="h6" sx={{ color: '#ffffff' }}>Total Return</Typography>
               </Box>
-              <Typography
-                variant="h4"
-                color={(portfolioSummary?.total_return || 0) >= 0 ? 'success.main' : 'error.main'}
-              >
-                ${portfolioSummary?.total_return.toFixed(2) || '0.00'}
-              </Typography>
-              <Typography variant="body2" color={(portfolioSummary?.daily_change || 0) >= 0 ? 'success.main' : 'error.main'}>
-                Daily: {(portfolioSummary?.daily_change || 0) >= 0 ? '+' : ''}${portfolioSummary?.daily_change?.toFixed(2) || '0.00'} ({(portfolioSummary?.daily_change_percent || 0).toFixed(2)}%)
-              </Typography>
-              <Typography variant="body2" sx={{ color: '#ffffff' }}>
+              <AnimatedPrice
+                value={portfolioSummary?.total_return || 0}
+                prefix="$"
+                typographyVariant="h4"
+                color={(portfolioSummary?.total_return || 0) >= 0 ? '#4caf50' : '#f44336'}
+              />
+              <Box display="flex" alignItems="center" mt={1}>
+                <Typography variant="body2" color={(portfolioSummary?.daily_change || 0) >= 0 ? 'success.main' : 'error.main'} sx={{ mr: 1 }}>
+                  Daily: 
+                </Typography>
+                <AnimatedPrice
+                  value={portfolioSummary?.daily_change || 0}
+                  prefix={(portfolioSummary?.daily_change || 0) >= 0 ? '+$' : '-$'}
+                  typographyVariant="body2"
+                  color={(portfolioSummary?.daily_change || 0) >= 0 ? '#4caf50' : '#f44336'}
+                />
+                <Typography variant="body2" color={(portfolioSummary?.daily_change || 0) >= 0 ? 'success.main' : 'error.main'} sx={{ ml: 1 }}>
+                  ({(portfolioSummary?.daily_change_percent || 0).toFixed(2)}%)
+                </Typography>
+              </Box>
+              <Typography variant="body2" sx={{ color: '#ffffff', mt: 0.5 }}>
                 Total: {portfolioSummary?.return_percentage.toFixed(2) || '0.00'}%
               </Typography>
             </CardContent>
@@ -183,7 +226,7 @@ const Dashboard: React.FC = () => {
                       try {
                         await botAPI.panicSell();
                         alert("PANIC SELL TRIGGERED: Bot stopped and all holdings are being liquidated.");
-                        fetchDashboardData();
+                        fetchDashboardData(true);
                       } catch (error) {
                         alert("Error executing panic sell. Please check logs.");
                       }
@@ -196,95 +239,93 @@ const Dashboard: React.FC = () => {
                 </Button>
               )}
               <Box mt={2} mb={2}>
-                <Typography variant="body2" color="textSecondary" gutterBottom>
-                  Portfolio Allocation ({Math.round((botConfig?.portfolio_allocation || 1.0) * 100)}%)
-                </Typography>
-                <Box display="flex" alignItems="center" gap={3}>
-                  <Slider
-                    value={Math.round((botConfig?.portfolio_allocation || 1.0) * 100)}
-                    step={1}
-                    min={5}
-                    max={100}
-                    valueLabelDisplay="auto"
-                    onChange={(_, value) => {
-                      const newValue = (value as number) / 100;
-                      setBotConfig(prev => prev ? { ...prev, portfolio_allocation: newValue } : null);
+                <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
+                  <Typography variant="body2" color="textSecondary">
+                    Portfolio Allocation ({Math.round((botConfig?.portfolio_allocation || 1.0) * 100)}%)
+                  </Typography>
+                  <TextField
+                    type="number"
+                    size="small"
+                    value={
+                      botConfig?.portfolio_allocation_type === 'FIXED_AMOUNT' 
+                        ? botConfig.portfolio_allocation_amount 
+                        : Math.round((portfolioSummary?.total_value || 0) * (botConfig?.portfolio_allocation || 1.0))
+                    }
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value);
+                      if (isNaN(val)) return;
+                      const portValue = portfolioSummary?.total_value || 1;
+                      let percentage = Math.min(1.0, Math.max(0.01, val / portValue));
+                      percentage = Math.round(percentage * 100) / 100; 
+                      
+                      setBotConfig(prev => prev ? { 
+                        ...prev, 
+                        portfolio_allocation_type: 'FIXED_AMOUNT',
+                        portfolio_allocation_amount: val,
+                        portfolio_allocation: percentage
+                      } : null);
                     }}
-                    onChangeCommitted={async (_, value) => {
-                      const newValue = (value as number) / 100;
-                      // Update backend with % type
+                    onBlur={async (e) => {
+                      const val = parseFloat(e.target.value);
+                      if (isNaN(val) || val < 0) return;
+                      
+                      const portValue = portfolioSummary?.total_value || 1;
+                      let percentage = Math.min(1.0, Math.max(0.01, val / portValue));
+                      percentage = Math.round(percentage * 100) / 100; 
+                      
                       try {
                         const updated = await botAPI.updateBotConfig({ 
-                          portfolio_allocation_type: 'PERCENTAGE',
-                          portfolio_allocation: newValue 
-                        });
-                        setBotConfig(updated);
-                      } catch (err) {
-                        console.error('Failed to update allocation', err);
-                      }
-                    }}
-                    disabled={!botConfig}
-                    sx={{ flexGrow: 1 }}
-                  />
-                                    <TextField
-                      type="number"
-                      size="small"
-                      value={
-                        botConfig?.portfolio_allocation_type === 'FIXED_AMOUNT' 
-                          ? botConfig.portfolio_allocation_amount 
-                          : Math.round((portfolioSummary?.total_value || 0) * (botConfig?.portfolio_allocation || 1.0))
-                      }
-                      onChange={(e) => {
-                        // Allow typing local state without committing immediately
-                        const val = parseFloat(e.target.value);
-                        if (isNaN(val)) return;
-                        // Determine resulting percentage and round to nearest whole number
-                        const portValue = portfolioSummary?.total_value || 1;
-                        let percentage = Math.min(1.0, Math.max(0.01, val / portValue));
-                        percentage = Math.round(percentage * 100) / 100; // Round to whole percentage (e.g. 0.45)
-                        
-                        setBotConfig(prev => prev ? { 
-                          ...prev, 
                           portfolio_allocation_type: 'FIXED_AMOUNT',
                           portfolio_allocation_amount: val,
                           portfolio_allocation: percentage
-                        } : null);
-                      }}
-                      onBlur={async (e) => {
-                        const val = parseFloat(e.target.value);
-                        if (isNaN(val) || val < 0) return;
-                        
-                        const portValue = portfolioSummary?.total_value || 1;
-                        let percentage = Math.min(1.0, Math.max(0.01, val / portValue));
-                        percentage = Math.round(percentage * 100) / 100; // Round to whole percent
-                        
-                        try {
-                          const updated = await botAPI.updateBotConfig({ 
-                            portfolio_allocation_type: 'FIXED_AMOUNT',
-                            portfolio_allocation_amount: val,
-                            portfolio_allocation: percentage
-                          });
-                          setBotConfig(updated);
-                        } catch (err) {
-                          console.error('Failed to update allocation amount', err);
-                        }
-                      }}
-                      InputProps={{
-                        startAdornment: <InputAdornment position="start">$</InputAdornment>,
-                      }}
-                      disabled={!botConfig || !portfolioSummary}
-                      sx={{ 
-                        width: '130px',
-                        '& input[type=number]': {
-                          MozAppearance: 'textfield',
-                        },
-                        '& input[type=number]::-webkit-outer-spin-button, & input[type=number]::-webkit-inner-spin-button': {
-                          WebkitAppearance: 'none',
-                          margin: 0,
-                        },
-                      }}
-                    />
+                        });
+                        setBotConfig(updated);
+                      } catch (err) {
+                        console.error('Failed to update allocation amount', err);
+                      }
+                    }}
+                    InputProps={{
+                      startAdornment: <InputAdornment position="start">$</InputAdornment>,
+                    }}
+                    disabled={!botConfig || !portfolioSummary}
+                    sx={{ 
+                      minWidth: '120px',
+                      maxWidth: '140px',
+                      '& input[type=number]': {
+                        MozAppearance: 'textfield',
+                      },
+                      '& input[type=number]::-webkit-outer-spin-button, & input[type=number]::-webkit-inner-spin-button': {
+                        WebkitAppearance: 'none',
+                        margin: 0,
+                      },
+                    }}
+                  />
                 </Box>
+                <Slider
+                  value={Math.round((botConfig?.portfolio_allocation || 1.0) * 100)}
+                  step={1}
+                  min={5}
+                  max={100}
+                  valueLabelDisplay="auto"
+                  onChange={(_, value) => {
+                    const newValue = (value as number) / 100;
+                    setBotConfig(prev => prev ? { ...prev, portfolio_allocation: newValue } : null);
+                  }}
+                  onChangeCommitted={async (_, value) => {
+                    const newValue = (value as number) / 100;
+                    try {
+                      const updated = await botAPI.updateBotConfig({ 
+                        portfolio_allocation_type: 'PERCENTAGE',
+                        portfolio_allocation: newValue 
+                      });
+                      setBotConfig(updated);
+                    } catch (err) {
+                      console.error('Failed to update allocation', err);
+                    }
+                  }}
+                  disabled={!botConfig}
+                  sx={{ width: '100%', mt: 1 }}
+                />
               </Box>
               <Typography variant="body2" color="textSecondary">
                 Today's Activity: {botStatus?.trades_bought_today || 0} Bought / {botStatus?.trades_sold_today || 0} Sold
@@ -355,7 +396,7 @@ const Dashboard: React.FC = () => {
                 <Button variant="outlined" size="small">
                   Bot Settings
                 </Button>
-                <Button variant="outlined" size="small" onClick={fetchDashboardData}>
+                <Button variant="outlined" size="small" onClick={() => fetchDashboardData(true)}>
                   Refresh Data
                 </Button>
 

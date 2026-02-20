@@ -135,6 +135,8 @@ class TradingBotService:
                 actual_allocation = getattr(config, 'portfolio_allocation', 1.0)
                 allocated_limit = portfolio.total_value * actual_allocation
                 
+            allocation_exceeded = invested > allocated_limit
+            allocation_overage = invested - allocated_limit if allocation_exceeded else 0.0
             usable_cash = min(portfolio.cash_balance, max(0.0, allocated_limit - invested))
             
             for symbol in stocks_to_analyze:
@@ -148,6 +150,8 @@ class TradingBotService:
                             portfolio_value=portfolio.total_value,
                             risk_tolerance=config.risk_tolerance,
                             max_position_size=config.max_position_size,
+                            allocation_exceeded=allocation_exceeded,
+                            allocation_overage=allocation_overage,
                             db_session=db
                         ),
                         timeout=30.0  # 30 second timeout per stock
@@ -220,8 +224,8 @@ class TradingBotService:
                     #     break
                     
                     # Validate the decision using the newly calculated usable cash
-                    if not ai_service.validate_trading_decision(decision, usable_cash, current_holdings):
-                        logger.warning(f"Invalid trading decision for {decision.symbol}")
+                    if not ai_service.validate_trading_decision(decision, usable_cash, current_holdings, allocation_exceeded):
+                        logger.warning(f"Invalid or blocked trading decision for {decision.symbol}")
                         continue
                     
                     # Execute the trade
