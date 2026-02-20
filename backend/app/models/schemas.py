@@ -200,6 +200,7 @@ class BotStatus(BaseModel):
     last_trade_time: Optional[datetime] = None
     continuous_trading: Optional[bool] = False
     trading_interval_minutes: Optional[int] = 5
+    is_analyzing: Optional[bool] = False
 
 # Trading Interval Configuration Schema
 class TradingIntervalConfig(BaseModel):

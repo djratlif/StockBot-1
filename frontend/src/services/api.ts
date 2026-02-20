@@ -85,6 +85,7 @@ export interface BotStatus {
   cash_available: number;
   portfolio_value: number;
   last_trade_time: string | null;
+  is_analyzing?: boolean;
 }
 
 export interface StockInfo {

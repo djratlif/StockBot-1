@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 class TradingBotService:
     def __init__(self):
         self.is_running = False
+        self.is_analyzing = False
         self.task: Optional[asyncio.Task] = None
         self.trading_interval = 60  # 1 minute for more frequent trading during testing
         self.analysis_interval = 60   # 1 minute for market analysis
@@ -99,13 +100,22 @@ class TradingBotService:
             
     async def _analyze_and_trade(self, db: Session, config: BotConfig):
         """Analyze market and execute trades if conditions are met"""
+        self.is_analyzing = True
         try:
             # Get portfolio information
             portfolio = portfolio_service.get_portfolio(db)
             if not portfolio:
                 logger.error("Portfolio not found")
                 return
-            
+
+            # Sync cash balance and equity from Alpaca so allocation math is accurate
+            from app.services.alpaca_service import alpaca_service as _alpaca
+            account = _alpaca.get_account()
+            if account:
+                portfolio.cash_balance = float(account.cash)
+                portfolio.total_value = float(account.equity)
+                db.commit()
+
             # Get current holdings
             current_holdings = portfolio_service.get_current_holdings_dict(db)
             
@@ -138,7 +148,21 @@ class TradingBotService:
             allocation_exceeded = invested > allocated_limit
             allocation_overage = invested - allocated_limit if allocation_exceeded else 0.0
             usable_cash = min(portfolio.cash_balance, max(0.0, allocated_limit - invested))
-            
+
+            # Log cycle start so the user can see the bot is running and what limits are in effect
+            try:
+                alloc_label = f"${allocated_limit:,.2f} (fixed)" if allocation_type.value == 'FIXED_AMOUNT' else f"${allocated_limit:,.2f} ({getattr(config, 'portfolio_allocation', 1.0)*100:.0f}%)"
+                status_msg = f"OVER LIMIT by ${allocation_overage:,.2f} — bot will only SELL" if allocation_exceeded else f"usable cash: ${usable_cash:,.2f}"
+                cycle_log = ActivityLog(
+                    action="ANALYSIS_CYCLE",
+                    details=f"Starting analysis of {len(stocks_to_analyze)} stocks | Allocation limit: {alloc_label} | Invested: ${invested:,.2f} | {status_msg}",
+                    timestamp=datetime.now(self.est)
+                )
+                db.add(cycle_log)
+                db.commit()
+            except Exception as log_error:
+                logger.error(f"Failed to log analysis cycle: {log_error}")
+
             for symbol in stocks_to_analyze:
                 try:
                     # Add timeout to prevent hanging on API calls
@@ -247,7 +271,14 @@ class TradingBotService:
                         
                         # Update current holdings for next iteration
                         current_holdings = portfolio_service.get_current_holdings_dict(db)
-                        
+
+                        # Recalculate usable cash and allocation status after each trade
+                        portfolio = portfolio_service.get_portfolio(db)
+                        invested = sum(h['quantity'] * h['current_price'] for h in current_holdings.values())
+                        allocation_exceeded = invested > allocated_limit
+                        allocation_overage = invested - allocated_limit if allocation_exceeded else 0.0
+                        usable_cash = min(portfolio.cash_balance, max(0.0, allocated_limit - invested))
+
                         # Small delay between trades
                         await asyncio.sleep(5)
                     
@@ -264,7 +295,9 @@ class TradingBotService:
         except Exception as e:
             logger.error(f"Error in analyze_and_trade: {str(e)}")
             db.rollback()
-    
+        finally:
+            self.is_analyzing = False
+
     def set_trading_interval(self, minutes: int):
         """Set the trading interval in minutes"""
         self.trading_interval = max(60, minutes * 60)  # Minimum 1 minute
@@ -274,6 +307,7 @@ class TradingBotService:
         """Get current bot status"""
         return {
             "is_running": self.is_running,
+            "is_analyzing": self.is_analyzing,
             "trading_interval_minutes": self.trading_interval // 60,
             "last_trade_time": self.last_trade_time.isoformat() if self.last_trade_time else None
         }

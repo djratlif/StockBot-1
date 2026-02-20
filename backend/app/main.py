@@ -9,6 +9,7 @@ from app.models.database import engine, Base, get_db
 from app.models.models import Portfolio, BotConfig
 from app.services.portfolio_service import portfolio_service
 from app.routers import portfolio, stocks, bot, trades, logs, auth
+from app.services.trading_bot_service import trading_bot_service
 from sqlalchemy.orm import Session
 
 # Configure logging
@@ -22,18 +23,30 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting StockBot API...")
-    
+
     # Create database tables
     Base.metadata.create_all(bind=engine)
     logger.info("Database tables created")
-    
-    # Database initialization only - user-specific data created on first login
-    logger.info("Database initialized - user data will be created on first login")
-    
+
+    # Resume trading loop if bot was active before the server restarted
+    try:
+        from app.models.database import SessionLocal
+        db = SessionLocal()
+        try:
+            config = db.query(BotConfig).first()
+            if config and config.is_active:
+                logger.info("Bot was active before restart — resuming trading loop")
+                await trading_bot_service.start_continuous_trading()
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error(f"Failed to resume trading bot on startup: {e}")
+
     yield
-    
+
     # Shutdown
     logger.info("Shutting down StockBot API...")
+    await trading_bot_service.stop_continuous_trading()
 
 # Create FastAPI app
 app = FastAPI(

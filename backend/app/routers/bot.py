@@ -108,11 +108,13 @@ async def get_bot_status(db: Session = Depends(get_db)):
             bot_service_status = trading_bot_service.get_status()
             continuous_trading = bot_service_status["is_running"]
             trading_interval_minutes = bot_service_status["trading_interval_minutes"]
+            is_analyzing = bot_service_status.get("is_analyzing", False)
         except Exception as e:
             logger.warning(f"Could not get trading bot service status: {str(e)}")
             continuous_trading = False
             trading_interval_minutes = 5
-        
+            is_analyzing = False
+
         return BotStatus(
             is_active=config.is_active,
             is_trading_hours=market_status.get("is_open", False),
@@ -124,7 +126,8 @@ async def get_bot_status(db: Session = Depends(get_db)):
             portfolio_value=portfolio.total_value,
             last_trade_time=last_trade.executed_at if last_trade else None,
             continuous_trading=continuous_trading,
-            trading_interval_minutes=trading_interval_minutes
+            trading_interval_minutes=trading_interval_minutes,
+            is_analyzing=is_analyzing
         )
     except HTTPException:
         raise

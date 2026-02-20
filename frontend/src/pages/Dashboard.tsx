@@ -33,6 +33,7 @@ const Dashboard: React.FC = () => {
   const [tradingStats, setTradingStats] = useState<TradingStats | null>(null);
   const [botConfig, setBotConfig] = useState<BotConfig | null>(null);
   const [loading, setLoading] = useState(true);
+  const [toggling, setToggling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
 
@@ -69,8 +70,9 @@ const Dashboard: React.FC = () => {
   };
 
   const handleBotToggle = async () => {
-    if (!botStatus) return;
+    if (!botStatus || toggling) return;
 
+    setToggling(true);
     try {
       if (botStatus.is_active) {
         await botAPI.stopBot();
@@ -83,6 +85,8 @@ const Dashboard: React.FC = () => {
     } catch (err) {
       setError('Failed to toggle bot status');
       console.error('Bot toggle error:', err);
+    } finally {
+      setToggling(false);
     }
   };
 
@@ -201,20 +205,33 @@ const Dashboard: React.FC = () => {
               <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
                 <Typography variant="h6">Bot Status</Typography>
                 <Chip
-                  label={botStatus?.is_active ? 'Active' : 'Inactive'}
-                  color={botStatus?.is_active ? 'success' : 'default'}
+                  label={
+                    botStatus?.is_analyzing ? 'Analyzing' :
+                    botStatus?.is_active ? 'Active' : 'Inactive'
+                  }
+                  color={
+                    botStatus?.is_analyzing ? 'warning' :
+                    botStatus?.is_active ? 'success' : 'default'
+                  }
                   size="small"
                 />
               </Box>
               <Button
                 variant="contained"
                 color={botStatus?.is_active ? 'error' : 'success'}
-                startIcon={botStatus?.is_active ? <Stop /> : <PlayArrow />}
+                startIcon={
+                  toggling
+                    ? <CircularProgress size={18} color="inherit" />
+                    : (botStatus?.is_active ? <Stop /> : <PlayArrow />)
+                }
                 onClick={handleBotToggle}
+                disabled={toggling}
                 fullWidth
                 sx={{ mb: 1 }}
               >
-                {botStatus?.is_active ? 'Stop Bot' : 'Start Bot'}
+                {toggling
+                  ? (botStatus?.is_active ? 'Stopping...' : 'Starting...')
+                  : (botStatus?.is_active ? 'Stop Bot' : 'Start Bot')}
               </Button>
               {botStatus?.is_active && (
                 <Button
