@@ -148,7 +148,7 @@ const Dashboard: React.FC = () => {
                     Holdings:
                   </Typography>
                   <AnimatedPrice
-                    value={(portfolioSummary?.total_value || 0) - (portfolioSummary?.cash_balance || 0)}
+                    value={portfolioSummary?.holdings_value || 0}
                     prefix="$"
                     typographyVariant="body2"
                     color="#ffffff"
@@ -164,36 +164,43 @@ const Dashboard: React.FC = () => {
           <Card>
             <CardContent>
               <Box display="flex" alignItems="center" mb={2}>
-                {(portfolioSummary?.total_return || 0) >= 0 ? (
+                {(portfolioSummary?.daily_change || 0) >= 0 ? (
                   <TrendingUp color="success" sx={{ mr: 1 }} />
                 ) : (
                   <TrendingDown color="error" sx={{ mr: 1 }} />
                 )}
-                <Typography variant="h6" sx={{ color: '#ffffff' }}>Total Return</Typography>
+                <Typography variant="h6" sx={{ color: '#ffffff' }}>Daily Total Return</Typography>
               </Box>
               <AnimatedPrice
-                value={portfolioSummary?.total_return || 0}
-                prefix="$"
+                value={Math.abs(portfolioSummary?.daily_change || 0)}
+                trendValue={portfolioSummary?.daily_change || 0}
+                prefix={(portfolioSummary?.daily_change || 0) >= 0 ? '+$' : '-$'}
                 typographyVariant="h4"
-                color={(portfolioSummary?.total_return || 0) >= 0 ? '#4caf50' : '#f44336'}
+                color={(portfolioSummary?.daily_change || 0) >= 0 ? '#4caf50' : '#f44336'}
               />
               <Box display="flex" alignItems="center" mt={1}>
                 <Typography variant="body2" color={(portfolioSummary?.daily_change || 0) >= 0 ? 'success.main' : 'error.main'} sx={{ mr: 1 }}>
-                  Daily: 
+                  Today: 
                 </Typography>
-                <AnimatedPrice
-                  value={portfolioSummary?.daily_change || 0}
-                  prefix={(portfolioSummary?.daily_change || 0) >= 0 ? '+$' : '-$'}
-                  typographyVariant="body2"
-                  color={(portfolioSummary?.daily_change || 0) >= 0 ? '#4caf50' : '#f44336'}
-                />
-                <Typography variant="body2" color={(portfolioSummary?.daily_change || 0) >= 0 ? 'success.main' : 'error.main'} sx={{ ml: 1 }}>
-                  ({(portfolioSummary?.daily_change_percent || 0).toFixed(2)}%)
+                <Typography variant="body2" color={(portfolioSummary?.daily_change || 0) >= 0 ? 'success.main' : 'error.main'}>
+                  {(portfolioSummary?.daily_change_percent || 0) > 0 ? '+' : ''}{(portfolioSummary?.daily_change_percent || 0).toFixed(2)}%
                 </Typography>
               </Box>
-              <Typography variant="body2" sx={{ color: '#ffffff', mt: 0.5 }}>
-                Total: {portfolioSummary?.return_percentage.toFixed(2) || '0.00'}%
-              </Typography>
+              <Box display="flex" alignItems="center" mt={0.5}>
+                <Typography variant="body2" sx={{ color: '#ffffff', mr: 1 }}>
+                  Overall:
+                </Typography>
+                <AnimatedPrice
+                  value={Math.abs(portfolioSummary?.total_return || 0)}
+                  trendValue={portfolioSummary?.total_return || 0}
+                  prefix={(portfolioSummary?.total_return || 0) >= 0 ? '+$' : '-$'}
+                  typographyVariant="body2"
+                  color={(portfolioSummary?.total_return || 0) >= 0 ? '#4caf50' : '#f44336'}
+                />
+                <Typography variant="body2" sx={{ color: '#ffffff', ml: 1 }}>
+                  ({(portfolioSummary?.return_percentage || 0) > 0 ? '+' : ''}{(portfolioSummary?.return_percentage || 0).toFixed(2)}%)
+                </Typography>
+              </Box>
             </CardContent>
           </Card>
         </Grid>
@@ -206,10 +213,12 @@ const Dashboard: React.FC = () => {
                 <Typography variant="h6">Bot Status</Typography>
                 <Chip
                   label={
+                    botStatus?.is_fetching ? 'Fetching' :
                     botStatus?.is_analyzing ? 'Analyzing' :
                     botStatus?.is_active ? 'Active' : 'Inactive'
                   }
                   color={
+                    botStatus?.is_fetching ? 'info' :
                     botStatus?.is_analyzing ? 'warning' :
                     botStatus?.is_active ? 'success' : 'default'
                   }
@@ -357,7 +366,7 @@ const Dashboard: React.FC = () => {
             <CardContent>
               <Box display="flex" alignItems="center" mb={2}>
                 <ShowChart sx={{ mr: 1, color: '#ffffff' }} />
-                <Typography variant="h6" sx={{ color: '#ffffff' }}>Win Rate</Typography>
+                <Typography variant="h6" sx={{ color: '#ffffff' }}>Daily Win Rate</Typography>
               </Box>
               <Typography variant="h4" sx={{ color: '#ffffff' }}>
                 {tradingStats?.win_rate.toFixed(1) || '0.0'}%
@@ -427,7 +436,7 @@ const Dashboard: React.FC = () => {
           <Card>
             <CardContent>
               <Typography variant="h6" gutterBottom>
-                Performance Summary
+                Today's Performance Summary
               </Typography>
               <Grid container spacing={2}>
                 <Grid item xs={6} sm={2}>

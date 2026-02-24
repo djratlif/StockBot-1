@@ -5,6 +5,7 @@ import { ArrowUpward, ArrowDownward } from '@mui/icons-material';
 
 interface AnimatedPriceProps {
   value: number;
+  trendValue?: number;
   prefix?: string;
   suffix?: string;
   decimals?: number;
@@ -15,6 +16,7 @@ interface AnimatedPriceProps {
 
 const AnimatedPrice: React.FC<AnimatedPriceProps> = ({
   value,
+  trendValue,
   prefix = '',
   suffix = '',
   decimals = 2,
@@ -22,14 +24,16 @@ const AnimatedPrice: React.FC<AnimatedPriceProps> = ({
   typographySx = {},
   color = '#ffffff'
 }) => {
-  const [prevValue, setPrevValue] = useState(value);
+  const [prevTrendValue, setPrevTrendValue] = useState(trendValue !== undefined ? trendValue : value);
   const [showArrow, setShowArrow] = useState(false);
   const [direction, setDirection] = useState<'up' | 'down'>('up');
   const arrowTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    if (value !== prevValue) {
-      const isUp = value > prevValue;
+    const currentTrend = trendValue !== undefined ? trendValue : value;
+    
+    if (currentTrend !== prevTrendValue) {
+      const isUp = currentTrend > prevTrendValue;
       setDirection(isUp ? 'up' : 'down');
       setShowArrow(true);
       
@@ -41,8 +45,10 @@ const AnimatedPrice: React.FC<AnimatedPriceProps> = ({
       arrowTimeoutRef.current = setTimeout(() => {
         setShowArrow(false);
       }, 2000); 
+      
+      setPrevTrendValue(currentTrend);
     }
-  }, [value, prevValue]);
+  }, [value, trendValue, prevTrendValue]);
 
   // Update prevValue immediately before next render if changed
   // so CountUp sees the old prevValue as 'start' and new value as 'end'.

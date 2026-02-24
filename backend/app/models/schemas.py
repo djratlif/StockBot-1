@@ -154,6 +154,7 @@ class TradingDecision(BaseModel):
 class PortfolioSummary(BaseModel):
     cash_balance: float
     total_value: float
+    holdings_value: float
     total_invested: float
     total_return: float
     return_percentage: float
@@ -201,6 +202,7 @@ class BotStatus(BaseModel):
     continuous_trading: Optional[bool] = False
     trading_interval_minutes: Optional[int] = 5
     is_analyzing: Optional[bool] = False
+    is_fetching: Optional[bool] = False
 
 # Trading Interval Configuration Schema
 class TradingIntervalConfig(BaseModel):

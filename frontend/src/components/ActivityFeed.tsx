@@ -12,6 +12,8 @@ import {
   Alert,
   IconButton,
   Tooltip,
+  ToggleButtonGroup,
+  ToggleButton,
 } from '@mui/material';
 import {
   TrendingUp,
@@ -38,6 +40,7 @@ interface ActivityItem {
 const ActivityFeed: React.FC = () => {
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [filter, setFilter] = useState<'ALL' | 'BOUGHT_SOLD'>('ALL');
 
   const fetchActivities = async () => {
     try {
@@ -171,28 +174,54 @@ const ActivityFeed: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
+  const filteredActivities = activities.filter(activity => {
+    if (filter === 'ALL') return true;
+    
+    const text = (activity.message || activity.details || '').toUpperCase();
+    if (filter === 'BOUGHT_SOLD') {
+      return text.includes('BUY') || text.includes('BOUGHT') || text.includes('SELL') || text.includes('SOLD');
+    }
+    return true;
+  });
+
   return (
     <Card>
       <CardContent>
-        <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+        <Box display="flex" justifyContent="space-between" alignItems="center" mb={2} flexWrap="wrap" gap={2}>
           <Typography variant="h6">
             Bot Activity Feed
           </Typography>
-          <Tooltip title="Refresh Activity">
-            <IconButton onClick={fetchActivities} disabled={loading} size="small">
-              <Refresh />
-            </IconButton>
-          </Tooltip>
+          <Box display="flex" alignItems="center" gap={1}>
+            <ToggleButtonGroup
+              value={filter}
+              exclusive
+              onChange={(e, newFilter) => {
+                if (newFilter !== null) setFilter(newFilter);
+              }}
+              size="small"
+              sx={{ height: 32 }}
+            >
+              <ToggleButton value="ALL" sx={{ textTransform: 'none', px: 2 }}>All</ToggleButton>
+              <ToggleButton value="BOUGHT_SOLD" sx={{ textTransform: 'none', px: 2 }}>Bought/Sold</ToggleButton>
+            </ToggleButtonGroup>
+            <Tooltip title="Refresh Activity">
+              <IconButton onClick={fetchActivities} disabled={loading} size="small">
+                <Refresh />
+              </IconButton>
+            </Tooltip>
+          </Box>
         </Box>
 
         <Box sx={{ maxHeight: 400, overflow: 'auto' }}>
-          {activities.length === 0 ? (
+          {filteredActivities.length === 0 ? (
             <Alert severity="info">
-              No recent activity. Start the bot to see real-time updates.
+              {activities.length === 0 
+                ? "No recent activity. Start the bot to see real-time updates." 
+                : "No activities match the selected filter."}
             </Alert>
           ) : (
             <List dense>
-              {activities.map((activity) => (
+              {filteredActivities.map((activity) => (
                 <ListItem
                   key={activity.id}
                   sx={{

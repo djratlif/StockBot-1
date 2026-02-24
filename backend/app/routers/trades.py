@@ -131,7 +131,13 @@ async def get_trade_summary(db: Session = Depends(get_db)):
                 "losing_trades": 0,
                 "win_rate": 0.0,
                 "total_profit_loss": 0.0,
-                "average_trade_return": 0.0
+                "average_trade_return": 0.0,
+                "best_trade": None,
+                "worst_trade": None,
+                "best_open_position": None,
+                "worst_open_position": None,
+                "best_open_symbol": None,
+                "worst_open_symbol": None
             }
         
         return {
@@ -142,7 +148,11 @@ async def get_trade_summary(db: Session = Depends(get_db)):
             "total_profit_loss": stats.total_profit_loss,
             "average_trade_return": stats.average_trade_return,
             "best_trade": stats.best_trade,
-            "worst_trade": stats.worst_trade
+            "worst_trade": stats.worst_trade,
+            "best_open_position": stats.best_open_position,
+            "worst_open_position": stats.worst_open_position,
+            "best_open_symbol": stats.best_open_symbol,
+            "worst_open_symbol": stats.worst_open_symbol
         }
     except Exception as e:
         logger.error(f"Error getting trade summary: {str(e)}")

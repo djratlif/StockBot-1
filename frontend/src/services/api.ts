@@ -29,6 +29,7 @@ export interface Portfolio {
 export interface PortfolioSummary {
   cash_balance: number;
   total_value: number;
+  holdings_value: number;
   total_invested: number;
   total_return: number;
   return_percentage: number;
@@ -86,6 +87,7 @@ export interface BotStatus {
   portfolio_value: number;
   last_trade_time: string | null;
   is_analyzing?: boolean;
+  is_fetching?: boolean;
 }
 
 export interface StockInfo {

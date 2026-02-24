@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     
     # Bot Configuration
     initial_balance: float = 2000.00
+    
     default_max_daily_trades: int = 5
     default_risk_tolerance: str = "MEDIUM"
     

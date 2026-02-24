@@ -18,6 +18,7 @@ class TradingBotService:
     def __init__(self):
         self.is_running = False
         self.is_analyzing = False
+        self.is_fetching = False
         self.task: Optional[asyncio.Task] = None
         self.trading_interval = 60  # 1 minute for more frequent trading during testing
         self.analysis_interval = 60   # 1 minute for market analysis
@@ -109,6 +110,7 @@ class TradingBotService:
                 return
 
             # Sync cash balance and equity from Alpaca so allocation math is accurate
+            self.is_fetching = True
             from app.services.alpaca_service import alpaca_service as _alpaca
             account = _alpaca.get_account()
             if account:
@@ -121,6 +123,7 @@ class TradingBotService:
             
             # Get trending stocks to analyze
             trending_stocks = stock_service.get_trending_stocks()
+            self.is_fetching = False
             
             # Limit analysis to top stocks to avoid API rate limits
             stocks_to_analyze = trending_stocks[:10]
@@ -308,6 +311,7 @@ class TradingBotService:
         return {
             "is_running": self.is_running,
             "is_analyzing": self.is_analyzing,
+            "is_fetching": self.is_fetching,
             "trading_interval_minutes": self.trading_interval // 60,
             "last_trade_time": self.last_trade_time.isoformat() if self.last_trade_time else None
         }

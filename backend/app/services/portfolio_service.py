@@ -133,21 +133,26 @@ class PortfolioService:
             # Alpaca account object has equity and last_equity (from previous close)
             daily_change = 0
             daily_change_percent = 0
+            holdings_value = 0
             if account:
+                try:
+                    # Alpaca provides long_market_value and short_market_value
+                    # we can use long_market_value directly or position_market_value based on representation
+                    holdings_value = float(account.long_market_value)
+                except AttributeError:
+                    holdings_value = 0.0
+                    
                 daily_change = float(account.equity) - float(account.last_equity)
                 daily_change_percent = (daily_change / float(account.last_equity)) * 100 if float(account.last_equity) > 0 else 0
             
-            # Calculate returns based on bot's actual performance
-            stats = self.get_trading_stats(db)
-            realized_pnl = stats.total_profit_loss if stats else 0
-            open_pnl = sum((h.current_price - h.average_cost) * h.quantity for h in holdings)
-            
-            total_return = realized_pnl + open_pnl
+            # Calculate total return based strictly on account equity
+            total_return = portfolio.total_value - settings.initial_balance
             return_percentage = (total_return / settings.initial_balance) * 100 if settings.initial_balance > 0 else 0
             
             return PortfolioSummary(
                 cash_balance=portfolio.cash_balance,
                 total_value=portfolio.total_value,
+                holdings_value=holdings_value,
                 total_invested=total_invested,
                 total_return=total_return,
                 return_percentage=return_percentage,
@@ -270,51 +275,60 @@ class PortfolioService:
                     worst_open_symbol=worst_open_symbol
                 )
             
-            # Calculate statistics
-            total_trades = len(trades)
-            profit_loss_by_symbol = {}
+            # 2. FIFO matching to find realized PnL of each Sell order
+            symbol_queues = {} # symbol -> list of {qty, price} buys
             
-            for trade in trades:
-                if trade.symbol not in profit_loss_by_symbol:
-                    profit_loss_by_symbol[trade.symbol] = []
+            today = date.today()
+            
+            closed_trades_today = [] # list of profit amounts for today's sells
+            total_profit_loss = 0 # all-time PnL
+            
+            # Make sure we process chronologically
+            trades_chronological = sorted(trades, key=lambda t: t.executed_at if t.executed_at else datetime.min)
+            
+            for trade in trades_chronological:
+                sym = trade.symbol
+                if sym not in symbol_queues:
+                    symbol_queues[sym] = []
                 
-                profit_loss_by_symbol[trade.symbol].append({
-                    'action': trade.action,
-                    'quantity': trade.quantity,
-                    'price': trade.price,
-                    'total': trade.total_amount
-                })
-            
-            total_profit_loss = 0
-            winning_trades = 0
-            losing_trades = 0
-            trade_returns = []
-            
-            for symbol, symbol_trades in profit_loss_by_symbol.items():
-                buys = [t for t in symbol_trades if t['action'] == TradeAction.BUY]
-                sells = [t for t in symbol_trades if t['action'] == TradeAction.SELL]
-                
-                if buys and sells:
-                    avg_buy_price = sum(t['total'] for t in buys) / sum(t['quantity'] for t in buys)
-                    avg_sell_price = sum(t['total'] for t in sells) / sum(t['quantity'] for t in sells)
+                if trade.action == TradeAction.BUY:
+                    symbol_queues[sym].append({"qty": trade.quantity, "price": trade.price})
+                elif trade.action == TradeAction.SELL:
+                    qty_to_sell = trade.quantity
+                    sell_price = trade.price
+                    trade_profit = 0
                     
-                    trade_return = avg_sell_price - avg_buy_price
-                    trade_returns.append(trade_return)
+                    queue = symbol_queues[sym]
+                    while qty_to_sell > 0 and queue:
+                        buy_item = queue[0]
+                        if buy_item["qty"] <= qty_to_sell:
+                            # consume this buy completely
+                            trade_profit += (sell_price - buy_item["price"]) * buy_item["qty"]
+                            qty_to_sell -= buy_item["qty"]
+                            queue.pop(0)
+                        else:
+                            # consume partially
+                            trade_profit += (sell_price - buy_item["price"]) * qty_to_sell
+                            buy_item["qty"] -= qty_to_sell
+                            qty_to_sell = 0
                     
-                    if trade_return > 0:
-                        winning_trades += 1
-                    else:
-                        losing_trades += 1
+                    total_profit_loss += trade_profit
                     
-                    total_profit_loss += trade_return * min(sum(t['quantity'] for t in buys), sum(t['quantity'] for t in sells))
+                    # Check if executed today
+                    if trade.executed_at and trade.executed_at.date() == today:
+                        closed_trades_today.append(trade_profit)
             
-            win_rate = (winning_trades / (winning_trades + losing_trades)) * 100 if (winning_trades + losing_trades) > 0 else 0
-            average_trade_return = sum(trade_returns) / len(trade_returns) if trade_returns else 0
-            best_trade = max(trade_returns) if trade_returns else None
-            worst_trade = min(trade_returns) if trade_returns else None
+            winning_trades = sum(1 for p in closed_trades_today if p > 0)
+            losing_trades = sum(1 for p in closed_trades_today if p <= 0)
+            total_trades_today = len(closed_trades_today)
+            
+            win_rate = (winning_trades / total_trades_today) * 100 if total_trades_today > 0 else 0.0
+            average_trade_return = sum(closed_trades_today) / total_trades_today if total_trades_today > 0 else 0.0
+            best_trade = max(closed_trades_today) if closed_trades_today else None
+            worst_trade = min(closed_trades_today) if closed_trades_today else None
             
             return TradingStats(
-                total_trades=total_trades,
+                total_trades=total_trades_today,
                 winning_trades=winning_trades,
                 losing_trades=losing_trades,
                 win_rate=win_rate,
