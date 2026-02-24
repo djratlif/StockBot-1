@@ -106,8 +106,18 @@ class BotConfigBase(BaseModel):
     portfolio_allocation_type: AllocationTypeEnum = AllocationTypeEnum.PERCENTAGE
     portfolio_allocation_amount: float = Field(default=2000.0, ge=0.0)
 
-class BotConfigUpdate(BotConfigBase):
-    pass
+class BotConfigUpdate(BaseModel):
+    max_daily_trades: Optional[int] = Field(None, ge=1, le=50)
+    max_position_size: Optional[float] = Field(None, ge=0.01, le=1.0)
+    risk_tolerance: Optional[RiskToleranceEnum] = None
+    trading_hours_start: Optional[str] = Field(None, pattern=r"^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$")
+    trading_hours_end: Optional[str] = Field(None, pattern=r"^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$")
+    is_active: Optional[bool] = None
+    stop_loss_percentage: Optional[float] = Field(None, ge=-1.0, le=0.0)
+    min_cash_reserve: Optional[float] = Field(None, ge=0.0)
+    portfolio_allocation: Optional[float] = Field(None, ge=0.01, le=1.0)
+    portfolio_allocation_type: Optional[AllocationTypeEnum] = None
+    portfolio_allocation_amount: Optional[float] = Field(None, ge=0.0)
 
 class BotConfigResponse(BotConfigBase):
     id: int

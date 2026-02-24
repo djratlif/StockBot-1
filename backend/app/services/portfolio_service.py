@@ -127,21 +127,15 @@ class PortfolioService:
             
             # Recalculate metrics based on fresh data
             holdings = db.query(Holdings).all()
-            total_invested = sum(h.quantity * h.average_cost for h in holdings)
+            total_invested = sum(abs(h.quantity) * h.average_cost for h in holdings)
+            holdings_value = sum(abs(h.quantity) * h.current_price for h in holdings)
             
             # Calculate daily change
             # Alpaca account object has equity and last_equity (from previous close)
             daily_change = 0
             daily_change_percent = 0
-            holdings_value = 0
+            
             if account:
-                try:
-                    # Alpaca provides long_market_value and short_market_value
-                    # we can use long_market_value directly or position_market_value based on representation
-                    holdings_value = float(account.long_market_value)
-                except AttributeError:
-                    holdings_value = 0.0
-                    
                 daily_change = float(account.equity) - float(account.last_equity)
                 daily_change_percent = (daily_change / float(account.last_equity)) * 100 if float(account.last_equity) > 0 else 0
             

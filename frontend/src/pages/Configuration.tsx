@@ -297,47 +297,54 @@ const Configuration: React.FC = () => {
               <Box mt={2} mb={2}>
                 <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
                   <Typography variant="body2" color="textSecondary">
-                    Portfolio Allocation ({Math.round((config?.portfolio_allocation || 1.0) * 100)}%)
+                    Portfolio Allocation
                   </Typography>
                   <TextField
                     type="number"
                     size="small"
                     value={
-                      config?.portfolio_allocation_type === 'FIXED_AMOUNT' 
-                        ? config.portfolio_allocation_amount 
+                      config?.portfolio_allocation_type === 'FIXED_AMOUNT'
+                        ? config.portfolio_allocation_amount
                         : Math.round((portfolioSummary?.total_value || 0) * (config?.portfolio_allocation || 1.0))
                     }
                     onChange={(e) => {
                       const val = parseFloat(e.target.value);
                       if (isNaN(val)) return;
-                      const portValue = portfolioSummary?.total_value || 1;
-                      let percentage = Math.min(1.0, Math.max(0.01, val / portValue));
-                      percentage = Math.round(percentage * 100) / 100; 
-                      
+                      // Optimistic UI update
                       setConfig(prev => prev ? { 
                         ...prev, 
                         portfolio_allocation_type: 'FIXED_AMOUNT',
-                        portfolio_allocation_amount: val,
-                        portfolio_allocation: percentage
+                        portfolio_allocation_amount: val
                       } : null);
                     }}
                     onBlur={async (e) => {
                       const val = parseFloat(e.target.value);
                       if (isNaN(val) || val < 0) return;
                       
-                      const portValue = portfolioSummary?.total_value || 1;
-                      let percentage = Math.min(1.0, Math.max(0.01, val / portValue));
-                      percentage = Math.round(percentage * 100) / 100; 
-                      
                       try {
                         const updated = await botAPI.updateBotConfig({ 
                           portfolio_allocation_type: 'FIXED_AMOUNT',
-                          portfolio_allocation_amount: val,
-                          portfolio_allocation: percentage
+                          portfolio_allocation_amount: val
                         });
                         setConfig(updated);
                       } catch (err) {
                         console.error('Failed to update allocation amount', err);
+                      }
+                    }}
+                    onKeyDown={async (e) => {
+                      if (e.key === 'Enter') {
+                        const val = parseFloat((e.target as HTMLInputElement).value);
+                        if (isNaN(val) || val < 0) return;
+                        try {
+                          const updated = await botAPI.updateBotConfig({ 
+                            portfolio_allocation_type: 'FIXED_AMOUNT',
+                            portfolio_allocation_amount: val
+                          });
+                          setConfig(updated);
+                          (e.target as HTMLInputElement).blur();
+                        } catch (err) {
+                          console.error('Failed to update allocation amount', err);
+                        }
                       }
                     }}
                     InputProps={{
@@ -357,30 +364,6 @@ const Configuration: React.FC = () => {
                     }}
                   />
                 </Box>
-                <Slider
-                  value={Math.round((config?.portfolio_allocation || 1.0) * 100)}
-                  step={1}
-                  min={5}
-                  max={100}
-                  valueLabelDisplay="auto"
-                  onChange={(_, value) => {
-                    const newValue = (value as number) / 100;
-                    handleChange('portfolio_allocation', newValue);
-                  }}
-                  onChangeCommitted={async (_, value) => {
-                    const newValue = (value as number) / 100;
-                    try {
-                      const updated = await botAPI.updateBotConfig({ 
-                        portfolio_allocation_type: 'PERCENTAGE',
-                        portfolio_allocation: newValue 
-                      });
-                      setConfig(updated);
-                    } catch (err) {
-                      console.error('Failed to update allocation', err);
-                    }
-                  }}
-                  sx={{ width: '100%', mt: 1 }}
-                />
               </Box>
               <Typography variant="body2" color="textSecondary" sx={{ mt: 2 }}>
                 When active, the bot will automatically analyze and trade stocks during market hours using the allocated amount.

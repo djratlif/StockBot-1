@@ -12,6 +12,13 @@ import {
   Slider,
   TextField,
   InputAdornment,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Paper,
 } from '@mui/material';
 import {
   TrendingUp,
@@ -23,7 +30,7 @@ import {
   Warning,
 } from '@mui/icons-material';
 import { portfolioAPI, botAPI, tradesAPI } from '../services/api';
-import type { PortfolioSummary, BotStatus, TradingStats, BotConfig } from '../services/api';
+import type { PortfolioSummary, BotStatus, TradingStats, BotConfig, Holding } from '../services/api';
 import ActivityFeed from '../components/ActivityFeed';
 import AnimatedPrice from '../components/AnimatedPrice';
 
@@ -32,6 +39,7 @@ const Dashboard: React.FC = () => {
   const [botStatus, setBotStatus] = useState<BotStatus | null>(null);
   const [tradingStats, setTradingStats] = useState<TradingStats | null>(null);
   const [botConfig, setBotConfig] = useState<BotConfig | null>(null);
+  const [holdings, setHoldings] = useState<Holding[]>([]);
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -51,10 +59,13 @@ const Dashboard: React.FC = () => {
         botAPI.getBotConfig().catch(() => null),
       ]);
 
+      const holdingsData = await portfolioAPI.getHoldings().catch(() => []);
+
       setPortfolioSummary(portfolio);
       setBotStatus(bot);
       setTradingStats(stats);
       setBotConfig(configData);
+      setHoldings(holdingsData || []);
       setLastUpdated(new Date());
 
       if (showLoader) {
@@ -267,47 +278,54 @@ const Dashboard: React.FC = () => {
               <Box mt={2} mb={2}>
                 <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
                   <Typography variant="body2" color="textSecondary">
-                    Portfolio Allocation ({Math.round((botConfig?.portfolio_allocation || 1.0) * 100)}%)
+                    Portfolio Allocation
                   </Typography>
                   <TextField
                     type="number"
                     size="small"
                     value={
-                      botConfig?.portfolio_allocation_type === 'FIXED_AMOUNT' 
-                        ? botConfig.portfolio_allocation_amount 
+                      botConfig?.portfolio_allocation_type === 'FIXED_AMOUNT'
+                        ? botConfig.portfolio_allocation_amount
                         : Math.round((portfolioSummary?.total_value || 0) * (botConfig?.portfolio_allocation || 1.0))
                     }
                     onChange={(e) => {
                       const val = parseFloat(e.target.value);
                       if (isNaN(val)) return;
-                      const portValue = portfolioSummary?.total_value || 1;
-                      let percentage = Math.min(1.0, Math.max(0.01, val / portValue));
-                      percentage = Math.round(percentage * 100) / 100; 
-                      
+                      // Optimistic UI update
                       setBotConfig(prev => prev ? { 
                         ...prev, 
                         portfolio_allocation_type: 'FIXED_AMOUNT',
-                        portfolio_allocation_amount: val,
-                        portfolio_allocation: percentage
+                        portfolio_allocation_amount: val
                       } : null);
                     }}
                     onBlur={async (e) => {
                       const val = parseFloat(e.target.value);
                       if (isNaN(val) || val < 0) return;
                       
-                      const portValue = portfolioSummary?.total_value || 1;
-                      let percentage = Math.min(1.0, Math.max(0.01, val / portValue));
-                      percentage = Math.round(percentage * 100) / 100; 
-                      
                       try {
                         const updated = await botAPI.updateBotConfig({ 
                           portfolio_allocation_type: 'FIXED_AMOUNT',
-                          portfolio_allocation_amount: val,
-                          portfolio_allocation: percentage
+                          portfolio_allocation_amount: val
                         });
                         setBotConfig(updated);
                       } catch (err) {
                         console.error('Failed to update allocation amount', err);
+                      }
+                    }}
+                    onKeyDown={async (e) => {
+                      if (e.key === 'Enter') {
+                        const val = parseFloat((e.target as HTMLInputElement).value);
+                        if (isNaN(val) || val < 0) return;
+                        try {
+                          const updated = await botAPI.updateBotConfig({ 
+                            portfolio_allocation_type: 'FIXED_AMOUNT',
+                            portfolio_allocation_amount: val
+                          });
+                          setBotConfig(updated);
+                          (e.target as HTMLInputElement).blur();
+                        } catch (err) {
+                          console.error('Failed to update allocation amount', err);
+                        }
                       }
                     }}
                     InputProps={{
@@ -327,31 +345,6 @@ const Dashboard: React.FC = () => {
                     }}
                   />
                 </Box>
-                <Slider
-                  value={Math.round((botConfig?.portfolio_allocation || 1.0) * 100)}
-                  step={1}
-                  min={5}
-                  max={100}
-                  valueLabelDisplay="auto"
-                  onChange={(_, value) => {
-                    const newValue = (value as number) / 100;
-                    setBotConfig(prev => prev ? { ...prev, portfolio_allocation: newValue } : null);
-                  }}
-                  onChangeCommitted={async (_, value) => {
-                    const newValue = (value as number) / 100;
-                    try {
-                      const updated = await botAPI.updateBotConfig({ 
-                        portfolio_allocation_type: 'PERCENTAGE',
-                        portfolio_allocation: newValue 
-                      });
-                      setBotConfig(updated);
-                    } catch (err) {
-                      console.error('Failed to update allocation', err);
-                    }
-                  }}
-                  disabled={!botConfig}
-                  sx={{ width: '100%', mt: 1 }}
-                />
               </Box>
               <Typography variant="body2" color="textSecondary">
                 Today's Activity: {botStatus?.trades_bought_today || 0} Bought / {botStatus?.trades_sold_today || 0} Sold
@@ -360,73 +353,103 @@ const Dashboard: React.FC = () => {
           </Card>
         </Grid>
 
-        {/* Trading Stats */}
-        <Grid item xs={12} md={6} lg={3}>
-          <Card>
-            <CardContent>
-              <Box display="flex" alignItems="center" mb={2}>
-                <ShowChart sx={{ mr: 1, color: '#ffffff' }} />
-                <Typography variant="h6" sx={{ color: '#ffffff' }}>Daily Win Rate</Typography>
-              </Box>
-              <Typography variant="h4" sx={{ color: '#ffffff' }}>
-                {tradingStats?.win_rate.toFixed(1) || '0.0'}%
-              </Typography>
-              <Typography variant="body2" sx={{ color: '#ffffff' }}>
-                {tradingStats?.winning_trades || 0}W / {tradingStats?.losing_trades || 0}L
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-
         {/* Market Status */}
-        <Grid item xs={12} md={6}>
+        <Grid item xs={12} md={12}>
           <Card>
             <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Market Status
-              </Typography>
-              <Box display="flex" gap={1} mb={2}>
-                <Chip
-                  label={botStatus?.is_trading_hours ? 'Market Open' : 'Market Closed'}
-                  color={botStatus?.is_trading_hours ? 'success' : 'default'}
-                />
-                <Chip
-                  label={`${portfolioSummary?.holdings_count || 0} Holdings`}
-                  variant="outlined"
-                />
+              <Box display="flex" alignItems="center" gap={2} mb={2} flexWrap="wrap">
+                <Typography variant="h6">
+                  Market Status
+                </Typography>
+                <Box display="flex" gap={1} alignItems="center">
+                  <Chip
+                    label={`${portfolioSummary?.holdings_count || 0} Holdings`}
+                    variant="outlined"
+                    size="small"
+                  />
+                  <Chip
+                    label={`${holdings.filter(h => h.quantity > 0).length} Long`}
+                    variant="outlined"
+                    size="small"
+                  />
+                  <Chip
+                    label={`${holdings.filter(h => h.quantity < 0).length} Short`}
+                    variant="outlined"
+                    size="small"
+                  />
+                  <Chip
+                    icon={<ShowChart fontSize="small" />}
+                    label={`Win Rate: ${tradingStats?.win_rate.toFixed(1) || '0.0'}%`}
+                    color="primary"
+                    variant="outlined"
+                    size="small"
+                  />
+                  <Chip
+                    label={`${tradingStats?.winning_trades || 0}W / ${tradingStats?.losing_trades || 0}L`}
+                    color="default"
+                    variant="outlined"
+                    size="small"
+                  />
+                </Box>
               </Box>
-              <Typography variant="body2" color="textSecondary">
-                The bot will automatically trade during market hours when active.
-              </Typography>
+
+              <Box mt={3} mb={3}>
+                <Typography variant="subtitle2" gutterBottom>
+                  Current Holdings Table
+                </Typography>
+                <TableContainer component={Paper} elevation={0} variant="outlined" sx={{ bgcolor: 'background.default' }}>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Symbol</TableCell>
+                        <TableCell align="right">Qty</TableCell>
+                        <TableCell align="right">Avg Cost</TableCell>
+                        <TableCell align="right">Current</TableCell>
+                        <TableCell align="right">Return</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {holdings.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={5} align="center">No active holdings</TableCell>
+                        </TableRow>
+                      ) : (
+                        holdings.map((h) => {
+                          const isShort = h.quantity < 0;
+                          // If shorting, return is mathematically inverted (Avg Cost - Current Price)
+                          // For long: (Current Price - Avg Cost) * Qty
+                          // Our portfolio service might handle the absolute value or short logically, but let's calculate exact dollar return here
+                          // Since qty is negative for short: (Current - Avg) * (-Qty) = (Avg - Current) * Qty = Profit for short
+                          // Thus formula is always: (Current - Avg) * Qty
+                          const totalReturn = (h.current_price - h.average_cost) * h.quantity;
+                          // Return percent depends on the initial investment (absolute quantity * average cost)
+                          const initialInvestment = Math.abs(h.quantity) * h.average_cost;
+                          const returnPercent = initialInvestment > 0 ? (totalReturn / initialInvestment) * 100 : 0;
+                          const isPositive = totalReturn >= 0;
+
+                          return (
+                            <TableRow key={h.symbol}>
+                              <TableCell sx={{ fontWeight: 'bold' }}>{h.symbol}</TableCell>
+                              <TableCell align="right">
+                                {Math.abs(h.quantity)} {isShort ? <Typography component="span" variant="caption" color="error.main">(Short)</Typography> : ''}
+                              </TableCell>
+                              <TableCell align="right">${h.average_cost.toFixed(2)}</TableCell>
+                              <TableCell align="right">${h.current_price.toFixed(2)}</TableCell>
+                              <TableCell align="right" sx={{ color: isPositive ? 'success.main' : 'error.main', fontWeight: 'bold' }}>
+                                {isPositive ? '+' : ''}${totalReturn.toFixed(2)} ({isPositive ? '+' : ''}{returnPercent.toFixed(2)}%)
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })
+                      )}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </Box>
+
               <Typography variant="caption" display="block" sx={{ mt: 1, color: 'text.disabled' }}>
                 Last updated: {lastUpdated.toLocaleTimeString()}
               </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        {/* Quick Actions */}
-        <Grid item xs={12} md={6}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Quick Actions
-              </Typography>
-              <Box display="flex" gap={1} flexWrap="wrap">
-                <Button variant="outlined" size="small">
-                  View Portfolio
-                </Button>
-                <Button variant="outlined" size="small">
-                  Trading History
-                </Button>
-                <Button variant="outlined" size="small">
-                  Bot Settings
-                </Button>
-                <Button variant="outlined" size="small" onClick={() => fetchDashboardData(true)}>
-                  Refresh Data
-                </Button>
-
-              </Box>
             </CardContent>
           </Card>
         </Grid>
