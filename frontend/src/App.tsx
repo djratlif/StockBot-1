@@ -9,6 +9,7 @@ import Portfolio from './pages/Portfolio';
 import Trading from './pages/Trading';
 import Configuration from './pages/Configuration';
 import Debug from './pages/Debug';
+import { WebSocketProvider } from './contexts/WebSocketContext';
 import Unauthorized from './pages/Unauthorized';
 import Navbar from './components/Navbar';
 import GoogleSignIn from './components/GoogleSignIn';
@@ -29,7 +30,16 @@ const theme = createTheme({
     },
   },
   typography: {
-    fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif',
+    fontFamily: '"Outfit", "Inter", "Roboto", "Helvetica", "Arial", sans-serif',
+    h5: {
+      fontWeight: 600,
+    },
+    h4: {
+      fontWeight: 600,
+    },
+    h6: {
+      fontWeight: 600,
+    }
   },
 });
 
@@ -66,16 +76,18 @@ const AppContent: React.FC = () => {
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-      <Navbar />
-      <Box component="main" sx={{ flexGrow: 1, p: 3 }}>
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/portfolio" element={<Portfolio />} />
-          <Route path="/trading" element={<Trading />} />
-          <Route path="/config" element={<Configuration />} />
-          <Route path="/debug" element={<Debug />} />
-        </Routes>
-      </Box>
+      <WebSocketProvider>
+        <Navbar />
+        <Box component="main" sx={{ flexGrow: 1, p: 3 }}>
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/portfolio" element={<Portfolio />} />
+            <Route path="/trading" element={<Trading />} />
+            <Route path="/config" element={<Configuration />} />
+            <Route path="/debug" element={<Debug />} />
+          </Routes>
+        </Box>
+      </WebSocketProvider>
     </Box>
   );
 };

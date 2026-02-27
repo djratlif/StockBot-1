@@ -83,7 +83,7 @@ async def get_stock_history(
                             "high": float(values.get('2. high', 0)),
                             "low": float(values.get('3. low', 0)),
                             "close": float(values.get('4. close', 0)),
-                            "volume": int(values.get('5. volume', 0))
+                            "volume": int(float(values.get('5. volume', 0)))
                         })
         else:
             # DataFrame format

@@ -1,30 +1,35 @@
 import pandas as pd
 from typing import Dict, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime
+import json
 import logging
 from app.models.schemas import StockInfo, MarketDataResponse
 from app.models.models import MarketData
 from sqlalchemy.orm import Session
 from app.services.alpaca_service import alpaca_service
+import redis
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
 class StockService:
     def __init__(self):
-        self.cache = {}
-        self.cache_duration = timedelta(seconds=55)  # Cache for 55s to ensure expiry before 60s frontend poll
+        self.redis_client = redis.Redis.from_url(settings.redis_url, decode_responses=True)
+        self.cache_duration = 55  # Cache for 55s to ensure expiry before 60s frontend poll
     
     async def get_stock_info(self, symbol: str, db_session=None) -> Optional[StockInfo]:
         """Get comprehensive stock information using Alpaca"""
         try:
             # Check cache first
             cache_key = f"{symbol}_info"
-            if self._is_cached(cache_key):
-                return self.cache[cache_key]["data"]
+            cached_data = self._get_cached(cache_key)
+            if cached_data:
+                return cached_data
             
             # Use Alpaca
             stock_info = await alpaca_service.get_stock_info(symbol)
             if stock_info:
+                print(f"[DATA] Fetched new data for {symbol} from Alpaca")
                 logger.info(f"Successfully fetched {symbol} data from Alpaca")
                 self._cache_data(cache_key, stock_info)
                 return stock_info
@@ -41,8 +46,9 @@ class StockService:
         try:
             # Check cache first
             cache_key = f"{symbol}_price"
-            if self._is_cached(cache_key):
-                return self.cache[cache_key]["data"]
+            cached_data = self._get_cached(cache_key)
+            if cached_data is not None:
+                return float(cached_data)
             
             # Use Alpaca
             current_price = await alpaca_service.get_current_price(symbol)
@@ -63,8 +69,9 @@ class StockService:
         try:
             # Check cache first
             cache_key = f"{symbol}_historical_{period}"
-            if self._is_cached(cache_key):
-                return self.cache[cache_key]["data"]
+            cached_data = self._get_cached(cache_key)
+            if cached_data:
+                return cached_data
             
             # Use Alpaca
             # Note: StockService expects Dict/JSON, but AlpacaService returns Dict
@@ -131,20 +138,80 @@ class StockService:
             db.rollback()
             return None
     
-    def _is_cached(self, key: str) -> bool:
-        """Check if data is cached and still valid"""
-        if key not in self.cache:
-            return False
-        
-        cached_time = self.cache[key]["timestamp"]
-        return datetime.now() - cached_time < self.cache_duration
+    def _get_cached(self, key: str):
+        """Get data from Redis cache"""
+        try:
+            data = self.redis_client.get(key)
+            if data:
+                return json.loads(data)
+            return None
+        except redis.exceptions.ConnectionError:
+            # We are using eager Celery mode, meaning Redis is not strictly required.
+            # Do not log a loud error if the cache connection simply isn't there.
+            return None
+        except Exception as e:
+            logger.error(f"Redis get error for {key}: {str(e)}")
+            return None
     
     def _cache_data(self, key: str, data):
-        """Cache data with timestamp"""
-        self.cache[key] = {
-            "data": data,
-            "timestamp": datetime.now()
-        }
+        """Cache data in Redis with expiration"""
+        try:
+            # Custom JSON encoder to handle datetime objects
+            class DateTimeEncoder(json.JSONEncoder):
+                def default(self, obj):
+                    if isinstance(obj, datetime):
+                        return obj.isoformat()
+                    return super().default(obj)
+                    
+            # For Pydantic models (like StockInfo) which are not natively JSON serializable
+            if hasattr(data, 'model_dump'):
+                data_dict = data.model_dump()
+            elif hasattr(data, 'dict'):
+                data_dict = data.dict()
+            else:
+                data_dict = data
+                
+            self.redis_client.setex(
+                key,
+                self.cache_duration,
+                json.dumps(data_dict, cls=DateTimeEncoder)
+            )
+        except redis.exceptions.ConnectionError:
+            pass # Ignore connection errors in eager mode
+        except Exception as e:
+            logger.error(f"Redis set error for {key}: {str(e)}")
 
-# Global instance
+    async def fetch_news(self, symbol: str, limit: int = 5) -> List[Dict]:
+        """Fetch latest news for a symbol using Alpaca's News API"""
+        cache_key = f"news_{symbol}_{limit}"
+        cached_data = self._get_cached(cache_key)
+        if cached_data:
+            return cached_data
+            
+        try:
+            url = f"https://data.alpaca.markets/v1beta1/news?symbols={symbol}&limit={limit}"
+            headers = {
+                "APCA-API-KEY-ID": settings.alpaca_api_key,
+                "APCA-API-SECRET-KEY": settings.alpaca_secret_key
+            }
+            
+            import aiohttp
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        news = data.get("news", [])
+                        
+                        # Cache for 15 minutes
+                        if news:
+                            try:
+                                self.redis_client.setex(cache_key, 900, json.dumps(news))
+                            except redis.exceptions.ConnectionError:
+                                pass # Ignore connection errors in eager mode
+                        return news
+            return []
+        except Exception as e:
+            logger.error(f"Error fetching news for {symbol}: {str(e)}")
+            return []
+
 stock_service = StockService()

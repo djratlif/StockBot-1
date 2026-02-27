@@ -16,6 +16,7 @@ import {
   ToggleButtonGroup,
   Tooltip,
   Switch,
+  Chip,
 } from '@mui/material';
 import {
   Dashboard as DashboardIcon,
@@ -28,15 +29,19 @@ import {
   Menu as MenuIcon,
   Science as PaperIcon,
   AttachMoney as LiveIcon,
+  SensorsRounded, // Added SensorsRounded icon
+  SensorsOffRounded, // Added SensorsOffRounded icon
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import TimeTicker from './TimeTicker';
 import { useAuth } from '../contexts/AuthContext';
+import { useWebSocket } from '../contexts/WebSocketContext'; // Added WebSocketContext import
 
 const Navbar: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout, isAuthenticated } = useAuth();
+  const { isConnected } = useWebSocket(); // Get connection status from WebSocketContext
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [navMenuAnchorEl, setNavMenuAnchorEl] = useState<null | HTMLElement>(null);
   const [tradingMode, setTradingMode] = useState<string>('paper');
@@ -154,6 +159,16 @@ const Navbar: React.FC = () => {
           <Typography variant="body2" sx={{ display: { xs: 'none', sm: 'block' } }}>
             {user?.name}
           </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', ml: 2, mr: 2 }}>
+            <Chip 
+              icon={isConnected ? <SensorsRounded fontSize="small" /> : <SensorsOffRounded fontSize="small" />} 
+              label={isConnected ? "Live Data" : "Connecting..."} 
+              color={isConnected ? "success" : "default"}
+              variant="outlined"
+              size="small"
+              sx={{ mr: 2 }}
+            />
+          </Box>
           <Avatar
             src={user?.picture}
             alt={user?.name}

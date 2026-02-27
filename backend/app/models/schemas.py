@@ -92,15 +92,23 @@ class TradeResponse(TradeBase):
     class Config:
         from_attributes = True
 
+class StrategyProfileEnum(str, Enum):
+    BALANCED = "BALANCED"
+    AGGRESSIVE_DAY_TRADER = "AGGRESSIVE_DAY_TRADER"
+    CONSERVATIVE_VALUE = "CONSERVATIVE_VALUE"
+    MOMENTUM_SCALPER = "MOMENTUM_SCALPER"
+
 # Bot Configuration Schemas
 class BotConfigBase(BaseModel):
     max_daily_trades: int = Field(default=5, ge=1, le=50)
     max_position_size: float = Field(default=0.20, ge=0.01, le=1.0)
     risk_tolerance: RiskToleranceEnum = RiskToleranceEnum.MEDIUM
+    strategy_profile: StrategyProfileEnum = StrategyProfileEnum.BALANCED
     trading_hours_start: str = Field(default="09:30", pattern=r"^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$")
     trading_hours_end: str = Field(default="16:00", pattern=r"^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$")
     is_active: bool = False
     stop_loss_percentage: float = Field(default=-0.10, ge=-1.0, le=0.0)
+    take_profit_percentage: float = Field(default=0.15, ge=0.0, le=5.0)
     min_cash_reserve: float = Field(default=5.00, ge=0.0)
     portfolio_allocation: float = Field(default=1.0, ge=0.01, le=1.0)
     portfolio_allocation_type: AllocationTypeEnum = AllocationTypeEnum.PERCENTAGE
@@ -110,10 +118,12 @@ class BotConfigUpdate(BaseModel):
     max_daily_trades: Optional[int] = Field(None, ge=1, le=50)
     max_position_size: Optional[float] = Field(None, ge=0.01, le=1.0)
     risk_tolerance: Optional[RiskToleranceEnum] = None
+    strategy_profile: Optional[StrategyProfileEnum] = None
     trading_hours_start: Optional[str] = Field(None, pattern=r"^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$")
     trading_hours_end: Optional[str] = Field(None, pattern=r"^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$")
     is_active: Optional[bool] = None
     stop_loss_percentage: Optional[float] = Field(None, ge=-1.0, le=0.0)
+    take_profit_percentage: Optional[float] = Field(None, ge=0.0, le=5.0)
     min_cash_reserve: Optional[float] = Field(None, ge=0.0)
     portfolio_allocation: Optional[float] = Field(None, ge=0.01, le=1.0)
     portfolio_allocation_type: Optional[AllocationTypeEnum] = None

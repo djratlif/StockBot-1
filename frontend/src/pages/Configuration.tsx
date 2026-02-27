@@ -163,6 +163,23 @@ const Configuration: React.FC = () => {
                 </Select>
               </FormControl>
 
+              <FormControl fullWidth margin="normal">
+                <InputLabel>Strategy Profile</InputLabel>
+                <Select
+                  value={config.strategy_profile || 'BALANCED'}
+                  onChange={(e) => {
+                    handleChange('strategy_profile', e.target.value);
+                    saveField('strategy_profile', e.target.value);
+                  }}
+                  label="Strategy Profile"
+                >
+                  <MenuItem value="BALANCED">Balanced</MenuItem>
+                  <MenuItem value="AGGRESSIVE_DAY_TRADER">Aggressive Day Trader</MenuItem>
+                  <MenuItem value="CONSERVATIVE_VALUE">Conservative Value</MenuItem>
+                  <MenuItem value="MOMENTUM_SCALPER">Momentum Scalper</MenuItem>
+                </Select>
+              </FormControl>
+
               <TextField
                 fullWidth
                 label="Min Cash Reserve ($)"

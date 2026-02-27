@@ -20,8 +20,9 @@ class Settings(BaseSettings):
     google_client_id: Optional[str] = None
     google_client_secret: Optional[str] = None
     
-    # Database
+    # Database & Cache
     database_url: str = "sqlite:///./stockbot.db"
+    redis_url: str = "redis://localhost:6379/0"
     
     # Security
     secret_key: str

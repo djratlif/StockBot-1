@@ -8,7 +8,7 @@ from app.config import settings
 from app.models.database import engine, Base, get_db
 from app.models.models import Portfolio, BotConfig
 from app.services.portfolio_service import portfolio_service
-from app.routers import portfolio, stocks, bot, trades, logs, auth
+from app.routers import portfolio, stocks, bot, trades, logs, auth, websocket
 from app.services.trading_bot_service import trading_bot_service
 from sqlalchemy.orm import Session
 
@@ -72,6 +72,7 @@ app.include_router(stocks.router, prefix="/api/stocks", tags=["stocks"])
 app.include_router(bot.router, prefix="/api/bot", tags=["bot"])
 app.include_router(trades.router, prefix="/api/trades", tags=["trades"])
 app.include_router(logs.router, prefix="/api/logs", tags=["logs"])
+app.include_router(websocket.router, prefix="/api/stream", tags=["websocket"])
 
 @app.get("/")
 async def root():

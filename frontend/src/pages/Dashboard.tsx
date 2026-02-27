@@ -33,6 +33,7 @@ import { portfolioAPI, botAPI, tradesAPI } from '../services/api';
 import type { PortfolioSummary, BotStatus, TradingStats, BotConfig, Holding } from '../services/api';
 import ActivityFeed from '../components/ActivityFeed';
 import AnimatedPrice from '../components/AnimatedPrice';
+import { useWebSocket } from '../contexts/WebSocketContext';
 
 const Dashboard: React.FC = () => {
   const [portfolioSummary, setPortfolioSummary] = useState<PortfolioSummary | null>(null);
@@ -44,6 +45,28 @@ const Dashboard: React.FC = () => {
   const [toggling, setToggling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  
+  const { lastMessage, isConnected } = useWebSocket();
+
+  // Listen for WebSocket updates
+  useEffect(() => {
+    if (lastMessage) {
+      if (lastMessage.type === 'portfolio_update') {
+        setPortfolioSummary(prev => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            cash_balance: lastMessage.payload.cash_balance,
+            total_value: lastMessage.payload.total_value,
+            // You might need to recalculate holdings_value as well or send it in payload
+            holdings_value: lastMessage.payload.total_value - lastMessage.payload.cash_balance
+          };
+        });
+        setLastUpdated(new Date());
+      }
+      // Add other message types like trade_executed here...
+    }
+  }, [lastMessage]);
 
   const fetchDashboardData = async (showLoader = true) => {
     try {

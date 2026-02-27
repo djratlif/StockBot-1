@@ -26,14 +26,16 @@ class TradingBotService:
         self.est = pytz.timezone('US/Eastern')
         
     async def start_continuous_trading(self):
-        """Start the continuous trading loop"""
+        """Start the continuous trading loop using Celery"""
         if self.is_running:
             logger.warning("Trading bot is already running")
             return
             
         self.is_running = True
-        self.task = asyncio.create_task(self._trading_loop())
-        logger.info("Continuous trading bot started")
+        logger.info("Continuous trading bot started via Celery")
+        
+        # Start a fast-polling local loop that just triggers Celery tasks
+        self.task = asyncio.create_task(self._trigger_loop())
         
     async def stop_continuous_trading(self):
         """Stop the continuous trading loop"""
@@ -43,59 +45,40 @@ class TradingBotService:
         self.is_running = False
         if self.task:
             self.task.cancel()
-            try:
-                await self.task
-            except asyncio.CancelledError:
-                pass
         logger.info("Continuous trading bot stopped")
         
-    async def _trading_loop(self):
-        """Main trading loop that runs continuously when bot is active"""
+    async def _trigger_loop(self):
+        """Lightweight loop that triggers Celery tasks"""
+        from app.tasks.trading_tasks import execute_trading_cycle
+        from app.services.stock_service import stock_service
+        
         try:
             while self.is_running:
                 db = None
                 try:
-                    # Get database session
                     db = SessionLocal()
-                    
-                    # Check if bot is still active
                     config = db.query(BotConfig).first()
                     if not config or not config.is_active:
-                        logger.info("Bot is no longer active, stopping trading loop")
                         break
-                    
-                    # Check if market is open
+                        
                     market_status = stock_service.get_market_status()
-                    if not market_status.get("is_open", False):
-                        logger.info(f"Market is closed (Current time: {market_status.get('current_time', 'Unknown')}), waiting...")
-                        await asyncio.sleep(60)  # Check every minute when market is closed
-                        continue
+                    if market_status.get("is_open", False):
+                        # Dispatch task to Celery instead of running inline
+                        execute_trading_cycle.delay()
+                        logger.info("Dispatched trading cycle to Celery worker")
                     else:
-                        logger.info(f"Market is open (Current time: {market_status.get('current_time', 'Unknown')})")
-                    
-                    # Daily trade limit check removed as per user request
-                    # if not portfolio_service.can_make_trade(db, config.max_daily_trades):
-                    #     logger.info("Daily trade limit reached, waiting until tomorrow")
-                    #     await asyncio.sleep(3600)  # Wait 1 hour before checking again
-                    #     continue
-                    
-                    # Perform trading analysis and execution
-                    await self._analyze_and_trade(db, config)
-                    
-                    # Wait for the next trading interval
-                    await asyncio.sleep(self.trading_interval)
-                    
+                        logger.info(f"Market is closed, waiting...")
+                        
                 except Exception as e:
-                    logger.error(f"Error in trading loop: {str(e)}")
-                    await asyncio.sleep(60)  # Wait 1 minute before retrying
+                    logger.error(f"Error triggering trading cycle: {e}")
                 finally:
                     if db:
                         db.close()
                         
+                await asyncio.sleep(self.trading_interval)
+                
         except asyncio.CancelledError:
-            logger.info("Trading loop cancelled")
-        except Exception as e:
-            logger.error(f"Fatal error in trading loop: {str(e)}")
+            pass
         finally:
             self.is_running = False
             
@@ -117,6 +100,13 @@ class TradingBotService:
                 portfolio.cash_balance = float(account.cash)
                 portfolio.total_value = float(account.equity)
                 db.commit()
+                
+                # Broadcast real-time update to connected clients
+                from app.routers.websocket import _trigger_broadcast
+                await _trigger_broadcast("portfolio_update", {
+                    "cash_balance": portfolio.cash_balance,
+                    "total_value": portfolio.total_value
+                })
 
             # Get current holdings
             current_holdings = portfolio_service.get_current_holdings_dict(db)
@@ -168,6 +158,9 @@ class TradingBotService:
 
             for symbol in stocks_to_analyze:
                 try:
+                    # Fetch recent news context
+                    recent_news_data = await stock_service.fetch_news(symbol, limit=3)
+                    
                     # Add timeout to prevent hanging on API calls
                     decision = await asyncio.wait_for(
                         ai_service.analyze_stock_for_trading(
@@ -176,6 +169,8 @@ class TradingBotService:
                             current_holdings=current_holdings,
                             portfolio_value=portfolio.total_value,
                             risk_tolerance=config.risk_tolerance,
+                            strategy_profile=getattr(config, 'strategy_profile', 'BALANCED'),
+                            recent_news=recent_news_data,
                             max_position_size=config.max_position_size,
                             allocation_exceeded=allocation_exceeded,
                             allocation_overage=allocation_overage,

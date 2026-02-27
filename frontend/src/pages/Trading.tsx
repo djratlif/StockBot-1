@@ -4,89 +4,18 @@ import {
   Card,
   CardContent,
   Typography,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Paper,
   Box,
-  Chip,
   Button,
   TextField,
   CircularProgress,
   Alert,
-  IconButton,
-  Collapse,
+  Chip
 } from '@mui/material';
-import { KeyboardArrowDown, KeyboardArrowUp } from '@mui/icons-material';
-import { tradesAPI, botAPI, portfolioAPI, Holding } from '../services/api';
+import { tradesAPI, botAPI, portfolioAPI } from '../services/api';
 import type { Trade } from '../services/api';
-import HistoricalChart from '../components/HistoricalChart';
-
-// Row component to handle expansion logic
-const HoldingRow: React.FC<{ holding: Holding, trades: Trade[] }> = ({ holding, trades }) => {
-  const [open, setOpen] = useState(false);
-
-  const marketValue = holding.quantity * holding.current_price;
-  const costBasis = holding.quantity * holding.average_cost;
-  const gainLoss = marketValue - costBasis;
-  const returnPercent = costBasis > 0 ? ((marketValue - costBasis) / costBasis) * 100 : 0;
-
-  return (
-    <>
-      <TableRow sx={{ '& > *': { borderBottom: 'unset' } }}>
-        <TableCell>
-          <IconButton
-            aria-label="expand row"
-            size="small"
-            onClick={() => setOpen(!open)}
-          >
-            {open ? <KeyboardArrowUp /> : <KeyboardArrowDown />}
-          </IconButton>
-        </TableCell>
-        <TableCell component="th" scope="row">
-          <Chip label={holding.symbol} color="primary" variant="outlined" />
-        </TableCell>
-        <TableCell align="right">{holding.quantity}</TableCell>
-        <TableCell align="right">${holding.average_cost.toFixed(2)}</TableCell>
-        <TableCell align="right">${holding.current_price.toFixed(2)}</TableCell>
-        <TableCell align="right"><strong>${marketValue.toFixed(2)}</strong></TableCell>
-        <TableCell align="right">
-          <Typography
-            variant="body2"
-            color={gainLoss >= 0 ? 'success.main' : 'error.main'}
-            fontWeight="bold"
-          >
-            {gainLoss >= 0 ? '+' : ''}{gainLoss.toFixed(2)} ({returnPercent.toFixed(2)}%)
-          </Typography>
-        </TableCell>
-      </TableRow>
-      <TableRow>
-        <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={7}>
-          <Collapse in={open} timeout="auto" unmountOnExit>
-            <Box sx={{ margin: 1 }}>
-              <Typography variant="subtitle2" gutterBottom component="div">
-                Price History & Buy Points
-              </Typography>
-              <HistoricalChart
-                symbol={holding.symbol}
-                height={400}
-                trades={trades}
-                showToolbar={false}
-              />
-            </Box>
-          </Collapse>
-        </TableCell>
-      </TableRow>
-    </>
-  );
-};
 
 const Trading: React.FC = () => {
   const [trades, setTrades] = useState<Trade[]>([]);
-  const [holdings, setHoldings] = useState<Holding[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [analyzeSymbol, setAnalyzeSymbol] = useState('');
@@ -96,12 +25,8 @@ const Trading: React.FC = () => {
   const fetchTrades = async () => {
     try {
       setLoading(true);
-      const [tradesData, holdingsData] = await Promise.all([
-        tradesAPI.getTradingHistory(50),
-        portfolioAPI.getHoldings()
-      ]);
+      const tradesData = await tradesAPI.getTradingHistory(50);
       setTrades(tradesData);
-      setHoldings(holdingsData);
     } catch (err) {
       setError('Failed to load trading data');
       console.error('Trading error:', err);
@@ -129,7 +54,6 @@ const Trading: React.FC = () => {
     try {
       const result = await botAPI.executeAITrade(symbol);
       setAnalysisResult(result);
-      // Refresh trades
       fetchTrades();
     } catch (err) {
       setError('Failed to execute trade');
@@ -139,12 +63,11 @@ const Trading: React.FC = () => {
 
   useEffect(() => {
     fetchTrades();
-
     const interval = setInterval(fetchTrades, 60000);
     return () => clearInterval(interval);
   }, []);
 
-  if (loading) {
+  if (loading && trades.length === 0) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
         <CircularProgress />
@@ -153,16 +76,16 @@ const Trading: React.FC = () => {
   }
 
   return (
-    <Box>
-      <Box display="flex" alignItems="center" mb={2}>
+    <Box sx={{ pb: 6 }}>
+      <Box display="flex" alignItems="center" mb={3}>
         <Typography variant="h4" style={{ marginRight: '16px', marginBottom: 0 }}>
-          Trading
+          Trading Central
         </Typography>
-        <Chip 
-          label="Live Updates" 
-          color="success" 
-          size="small" 
-          variant="outlined" 
+        <Chip
+          label="Live Updates"
+          color="success"
+          size="small"
+          variant="outlined"
           style={{ animation: 'pulse 2s infinite' }}
         />
         <style>
@@ -177,17 +100,18 @@ const Trading: React.FC = () => {
       </Box>
 
       {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
+        <Alert severity="error" sx={{ mb: 3 }}>
           {error}
         </Alert>
       )}
 
-      <Grid container spacing={3}>
+      {/* Grid for Analysis and Stats */}
+      <Grid container spacing={3} mb={3}>
         {/* Stock Analysis */}
         <Grid item xs={12} md={6}>
-          <Card>
+          <Card sx={{ height: '100%' }}>
             <CardContent>
-              <Typography variant="h6" gutterBottom>
+              <Typography variant="h6" gutterBottom fontWeight="bold">
                 AI Stock Analysis
               </Typography>
               <Box display="flex" gap={1} mb={2}>
@@ -197,11 +121,13 @@ const Trading: React.FC = () => {
                   onChange={(e) => setAnalyzeSymbol(e.target.value)}
                   size="small"
                   placeholder="e.g., AAPL"
+                  fullWidth
                 />
                 <Button
                   variant="contained"
                   onClick={handleAnalyzeStock}
                   disabled={analyzing || !analyzeSymbol.trim()}
+                  sx={{ minWidth: '100px' }}
                 >
                   {analyzing ? <CircularProgress size={20} /> : 'Analyze'}
                 </Button>
@@ -213,9 +139,9 @@ const Trading: React.FC = () => {
                     {analysisResult.message}
                   </Alert>
                   {analysisResult.data && (
-                    <Box>
+                    <Box sx={{ bgcolor: 'background.default', p: 2, borderRadius: 1 }}>
                       <Typography variant="body2" gutterBottom>
-                        <strong>Action:</strong> {analysisResult.data.action}
+                        <strong>Action:</strong> <Chip size="small" label={analysisResult.data.action} color={analysisResult.data.action === 'BUY' ? 'success' : analysisResult.data.action === 'SELL' ? 'error' : 'default'} />
                       </Typography>
                       {analysisResult.data.quantity && (
                         <Typography variant="body2" gutterBottom>
@@ -228,16 +154,17 @@ const Trading: React.FC = () => {
                         </Typography>
                       )}
                       {analysisResult.data.reasoning && (
-                        <Typography variant="body2" gutterBottom>
+                        <Typography variant="body2" gutterBottom sx={{ mt: 1 }}>
                           <strong>Reasoning:</strong> {analysisResult.data.reasoning}
                         </Typography>
                       )}
                       {analysisResult.data.action !== 'HOLD' && (
                         <Button
-                          variant="outlined"
-                          size="small"
+                          variant="contained"
+                          color="primary"
                           onClick={() => handleExecuteTrade(analysisResult.data.symbol)}
-                          sx={{ mt: 1 }}
+                          sx={{ mt: 2 }}
+                          fullWidth
                         >
                           Execute Trade
                         </Button>
@@ -252,65 +179,34 @@ const Trading: React.FC = () => {
 
         {/* Quick Stats */}
         <Grid item xs={12} md={6}>
-          <Card>
+          <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
             <CardContent>
-              <Typography variant="h6" gutterBottom>
+              <Typography variant="h6" gutterBottom fontWeight="bold">
                 Trading Summary
               </Typography>
-              <Typography variant="body2" color="textSecondary">
-                Total Trades: {trades.length}
-              </Typography>
-              <Typography variant="body2" color="textSecondary">
-                Recent Activity: {trades.filter(t => new Date(t.executed_at) > new Date(Date.now() - 24 * 60 * 60 * 1000)).length} trades today
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        {/* Current Holdings Table */}
-        <Grid item xs={12}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Current Holdings
-              </Typography>
-
-              {holdings.length === 0 ? (
-                <Box textAlign="center" py={4}>
-                  <Typography variant="body1" color="textSecondary">
-                    No holdings found. Start trading to see your portfolio here.
+              <Box display="flex" justifyContent="space-around" textAlign="center" mt={3}>
+                <Box>
+                  <Typography variant="h3" color="primary.main">
+                    {trades.length}
+                  </Typography>
+                  <Typography variant="body2" color="textSecondary">
+                    Total Trades
                   </Typography>
                 </Box>
-              ) : (
-                <TableContainer component={Paper} variant="outlined">
-                  <Table>
-                    <TableHead>
-                      <TableRow>
-                        <TableCell />
-                        <TableCell>Symbol</TableCell>
-                        <TableCell align="right">Shares</TableCell>
-                        <TableCell align="right">Avg Cost</TableCell>
-                        <TableCell align="right">Current Price</TableCell>
-                        <TableCell align="right">Total Value</TableCell>
-                        <TableCell align="right">Return</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {holdings.map((holding) => (
-                        <HoldingRow
-                          key={holding.id}
-                          holding={holding}
-                          trades={trades.filter(t => t.symbol === holding.symbol)}
-                        />
-                      ))}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-              )}
+                <Box>
+                  <Typography variant="h3" color="secondary.main">
+                    {trades.filter(t => new Date(t.executed_at) > new Date(Date.now() - 24 * 60 * 60 * 1000)).length}
+                  </Typography>
+                  <Typography variant="body2" color="textSecondary">
+                    Trades Today
+                  </Typography>
+                </Box>
+              </Box>
             </CardContent>
           </Card>
         </Grid>
       </Grid>
+
     </Box>
   );
 };

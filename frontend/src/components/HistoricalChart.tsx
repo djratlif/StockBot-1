@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import Plot from 'react-plotly.js';
+import React, { useState, useEffect, useRef } from 'react';
+import { createChart, ColorType, CrosshairMode, IChartApi, ISeriesApi, CandlestickSeries, HistogramSeries, createSeriesMarkers, SeriesMarker } from 'lightweight-charts';
 import { Trade } from '../services/api';
 import {
   Card,
@@ -44,9 +44,14 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
   trades = [],
   showToolbar = true
 }) => {
+  const chartContainerRef = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<IChartApi | null>(null);
+  const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
+  const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
+
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [selectedSymbol, setSelectedSymbol] = useState<string>(symbol || '');
-  const [period, setPeriod] = useState<string>('1d');
+  const [period, setPeriod] = useState<string>('1mo');
   const [historicalData, setHistoricalData] = useState<HistoricalData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -64,9 +69,6 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
   const fetchHoldings = async () => {
     try {
       if (symbol) {
-        // If symbol prop is provided, we don't necessarily need to fetch all holdings for the selector
-        // But we might want to if showToolbar is true.
-        // For simplicity, if symbol is fixed, we just set it.
         if (!selectedSymbol) setSelectedSymbol(symbol);
         return;
       }
@@ -74,13 +76,11 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
       const holdingsData = await portfolioAPI.getHoldings();
       setHoldings(holdingsData);
 
-      // Set the first holding as default selected symbol
       if (holdingsData.length > 0 && !selectedSymbol) {
         setSelectedSymbol(holdingsData[0].symbol);
       }
     } catch (err) {
       console.error('Error fetching holdings:', err);
-      // Only set error if we really need holdings (no symbol provided)
       if (!symbol) setError('Failed to load holdings');
     }
   };
@@ -89,7 +89,10 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
     if (!symbol) return;
 
     try {
-      setLoading(true);
+      // Don't set loading repeatedly for silent background updates
+      if (historicalData.length === 0 || selectedSymbol !== symbol) {
+        setLoading(true);
+      }
       setError(null);
 
       const response: StockHistoryResponse = await stocksAPI.getStockHistory(symbol, selectedPeriod);
@@ -107,12 +110,9 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
     if (symbol) {
       setSelectedSymbol(symbol);
 
-      // Determine optimal period based on buy date
       if (trades && trades.length > 0) {
-        // Find earliest buy trade for this symbol
         const buyTrades = trades.filter(t => t.symbol === symbol && t.action === 'BUY');
         if (buyTrades.length > 0) {
-          // Sort by date ascending to get the first buy
           buyTrades.sort((a, b) => new Date(a.executed_at).getTime() - new Date(b.executed_at).getTime());
           const firstBuyDate = new Date(buyTrades[0].executed_at);
           const now = new Date();
@@ -134,7 +134,7 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
     } else {
       fetchHoldings();
     }
-  }, [symbol, trades]); // specific dependency on trades to recalculate if they load later
+  }, [symbol, trades]);
 
   useEffect(() => {
     if (selectedSymbol) {
@@ -144,7 +144,6 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
 
   useEffect(() => {
     if (selectedSymbol) {
-      // Update historical data every minute
       const interval = setInterval(() => {
         fetchHistoricalData(selectedSymbol, period);
       }, 60000);
@@ -152,6 +151,154 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
       return () => clearInterval(interval);
     }
   }, [selectedSymbol, period]);
+
+  // Lightweight Charts Initialization
+  useEffect(() => {
+    if (!chartContainerRef.current) return;
+
+    const chart = createChart(chartContainerRef.current, {
+      width: chartContainerRef.current.clientWidth,
+      height: height,
+      layout: {
+        background: { type: ColorType.Solid, color: 'transparent' },
+        textColor: '#d1d4dc',
+      },
+      grid: {
+        vertLines: { color: 'rgba(42, 46, 57, 0.2)' },
+        horzLines: { color: 'rgba(42, 46, 57, 0.2)' },
+      },
+      crosshair: {
+        mode: CrosshairMode.Normal,
+      },
+      timeScale: {
+        timeVisible: true,
+        secondsVisible: false,
+      },
+    });
+
+    const candleSeries = chart.addSeries(CandlestickSeries, {
+      upColor: '#4caf50',
+      downColor: '#f44336',
+      borderVisible: false,
+      wickUpColor: '#4caf50',
+      wickDownColor: '#f44336',
+    });
+
+    const volSeries = chart.addSeries(HistogramSeries, {
+      color: '#26a69a',
+      priceFormat: {
+        type: 'volume',
+      },
+      priceScaleId: '', // set as an overlay by setting a blank priceScaleId
+    });
+
+    chart.priceScale('').applyOptions({
+      scaleMargins: {
+        top: 0.8, // highest point of the series will be at 80% of the chart height
+        bottom: 0,
+      },
+    });
+
+    chartRef.current = chart;
+    candleSeriesRef.current = candleSeries;
+    volumeSeriesRef.current = volSeries;
+
+    const handleResize = () => {
+      if (chartContainerRef.current && chartRef.current) {
+        chartRef.current.applyOptions({ width: chartContainerRef.current.clientWidth });
+      }
+    };
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      if (chartRef.current) {
+        chartRef.current.remove();
+      }
+      chartRef.current = null;
+      candleSeriesRef.current = null;
+      volumeSeriesRef.current = null;
+    };
+  }, [height]);
+
+  // Update Data and Markers on Chart
+  useEffect(() => {
+    if (!candleSeriesRef.current || !volumeSeriesRef.current || historicalData.length === 0) return;
+
+    // Formatting date to Unix Timestamp (seconds) for lightweight-charts
+    const formattedData = historicalData.map(d => ({
+      time: Math.floor(new Date(d.date).getTime() / 1000),
+      open: d.open,
+      high: d.high,
+      low: d.low,
+      close: d.close,
+    }));
+
+    // Sort ascending by time
+    formattedData.sort((a, b) => a.time - b.time);
+
+    const formattedVolume = historicalData.map(d => ({
+      time: Math.floor(new Date(d.date).getTime() / 1000),
+      value: d.volume,
+      color: d.close > d.open ? 'rgba(76, 175, 80, 0.5)' : 'rgba(244, 67, 54, 0.5)',
+    })).sort((a, b) => a.time - b.time);
+
+    // Filter out duplicates (lightweight-charts requires strictly increasing time)
+    const uniqueFormattedData = formattedData.filter((v, i, a) => a.findIndex(t => (t.time === v.time)) === i);
+    const uniqueFormattedVolume = formattedVolume.filter((v, i, a) => a.findIndex(t => (t.time === v.time)) === i);
+
+    try {
+      candleSeriesRef.current.setData(uniqueFormattedData as any);
+      volumeSeriesRef.current.setData(uniqueFormattedVolume as any);
+      chartRef.current?.timeScale().fitContent();
+
+      // Plot Trade Markers
+      if (trades && trades.length > 0) {
+        // Find trades for this symbol that exist within the time window
+        const relevantTrades = trades.filter(t => t.symbol === selectedSymbol);
+
+        const markers: any[] = relevantTrades.map(t => {
+          const isBuy = t.action === 'BUY';
+          // Find the closest candlestick time that is on or before the trade time, 
+          // or just map directly if intraday markers are supported (lightweight charts ties markers to exact data point times)
+          // To be safe and ensure the marker shows up, we should snap it to the exact time of the nearest data point.
+          const tradeTime = Math.floor(new Date(t.executed_at).getTime() / 1000);
+
+          let closestPoint = uniqueFormattedData[0];
+          let minDiff = Infinity;
+          for (const point of uniqueFormattedData) {
+            const diff = Math.abs(point.time - tradeTime);
+            if (diff < minDiff) {
+              minDiff = diff;
+              closestPoint = point;
+            }
+          }
+
+          return {
+            time: closestPoint ? closestPoint.time : tradeTime,
+            position: isBuy ? 'belowBar' : 'aboveBar',
+            color: isBuy ? '#2196F3' : '#FF9800',
+            shape: isBuy ? 'arrowUp' : 'arrowDown',
+            text: `${isBuy ? 'B' : 'S'} @ ${t.price}`,
+          };
+        }).sort((a, b) => a.time - b.time);
+
+        // Remove duplicates if multiple trades snapped to the same data point
+        const uniqueMarkers = markers.filter((v, i, a) => a.findIndex(t => (t.time === v.time)) === i);
+
+        if (uniqueMarkers.length > 0) {
+          let sm = (candleSeriesRef.current as any).__markersPlugin;
+          if (!sm) {
+            sm = createSeriesMarkers(candleSeriesRef.current as any);
+            (candleSeriesRef.current as any).__markersPlugin = sm;
+          }
+          sm.setMarkers(uniqueMarkers);
+        }
+      }
+    } catch (e) {
+      console.error("Error setting chart data", e, uniqueFormattedData);
+    }
+  }, [historicalData, trades, selectedSymbol]);
 
   const handleSymbolChange = (event: SelectChangeEvent) => {
     setSelectedSymbol(event.target.value);
@@ -191,132 +338,23 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
     );
   }
 
-  // Prepare data for candlestick chart
-  const dates = historicalData.map(d => d.date);
-  const opens = historicalData.map(d => d.open);
-  const highs = historicalData.map(d => d.high);
-  const lows = historicalData.map(d => d.low);
-  const closes = historicalData.map(d => d.close);
-  const volumes = historicalData.map(d => d.volume);
-
-  // Calculate price change for color coding
   const priceChange = historicalData.length > 1
-    ? historicalData[historicalData.length - 1].close - historicalData[0].close
+    ? historicalData[0].close - historicalData[historicalData.length - 1].close // Alpha Vantage may return descending
     : 0;
-  const priceChangePercent = historicalData.length > 1
-    ? ((historicalData[historicalData.length - 1].close - historicalData[0].close) / historicalData[0].close) * 100
+  const priceChangePercent = historicalData.length > 1 && historicalData[historicalData.length - 1].close !== 0
+    ? (priceChange / historicalData[historicalData.length - 1].close) * 100
     : 0;
-
-  const candlestickData = [{
-    type: 'candlestick' as const,
-    x: dates,
-    open: opens,
-    high: highs,
-    low: lows,
-    close: closes,
-    name: selectedSymbol,
-    increasing: { line: { color: '#4caf50' } },
-    decreasing: { line: { color: '#f44336' } },
-    hovertemplate:
-      '<b>%{x}</b><br>' +
-      'Open: $%{open:.2f}<br>' +
-      'High: $%{high:.2f}<br>' +
-      'Low: $%{low:.2f}<br>' +
-      'Close: $%{close:.2f}<br>' +
-      '<extra></extra>'
-  }];
-
-  // Volume bar chart (secondary y-axis)
-  const volumeData = [{
-    type: 'bar' as const,
-    x: dates,
-    y: volumes,
-    name: 'Volume',
-    yaxis: 'y2',
-    marker: { color: 'rgba(158, 158, 158, 0.3)' },
-    hovertemplate:
-      '<b>%{x}</b><br>' +
-      'Volume: %{y:,.0f}<br>' +
-      '<extra></extra>'
-  }];
-
-  // Purchase markers
-  const buyTrades = trades.filter(t => t.action === 'BUY' && t.symbol === selectedSymbol);
-  const markerData = buyTrades.length > 0 ? [{
-    type: 'scatter' as const,
-    mode: 'markers' as const,
-    x: buyTrades.map(t => t.executed_at),
-    y: buyTrades.map(t => t.price),
-    name: 'Buy Point',
-    marker: {
-      symbol: 'triangle-up',
-      size: 12,
-      color: '#00C805', // Bright green
-      line: {
-        color: '#FFFFFF',
-        width: 1
-      }
-    },
-    hovertemplate:
-      '<b>Buy Executed</b><br>' +
-      'Date: %{x}<br>' +
-      'Price: $%{y:.2f}<br>' +
-      '<extra></extra>'
-  }] : [];
-
-  const layout = {
-    title: {
-      text: `${selectedSymbol} - Historical Price Movement`,
-      font: { size: 18, color: '#333' }
-    },
-    font: { family: 'Roboto, sans-serif' },
-    paper_bgcolor: 'rgba(0,0,0,0)',
-    plot_bgcolor: 'rgba(0,0,0,0)',
-    margin: { t: 60, b: 50, l: 60, r: 60 },
-    height: height,
-    xaxis: {
-      title: 'Date',
-      rangeslider: { visible: false },
-      showgrid: true,
-      gridcolor: 'rgba(128,128,128,0.2)'
-    },
-    yaxis: {
-      title: 'Price ($)',
-      side: 'left' as const,
-      showgrid: true,
-      gridcolor: 'rgba(128,128,128,0.2)'
-    },
-    yaxis2: {
-      title: 'Volume',
-      side: 'right' as const,
-      overlaying: 'y' as const,
-      showgrid: false,
-      tickformat: '.2s'
-    },
-    legend: {
-      x: 0,
-      y: 1,
-      bgcolor: 'rgba(255,255,255,0.8)'
-    }
-  } as any;
-
-  const config = {
-    displayModeBar: true,
-    displaylogo: false,
-    modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d'],
-    responsive: true,
-  } as any;
 
   return (
     <Card>
       <CardContent>
-        <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+        <Box display="flex" justifyContent="space-between" alignItems="center" mb={2} flexWrap="wrap" gap={2}>
           <Typography variant="h6">
             Historical Price Chart
           </Typography>
 
           <Box display="flex" gap={2} alignItems="center">
-            {priceChange !== 0 && (
+            {historicalData.length > 1 && (
               <Chip
                 label={`${priceChange >= 0 ? '+' : ''}${priceChange.toFixed(2)} (${priceChangePercent >= 0 ? '+' : ''}${priceChangePercent.toFixed(2)}%)`}
                 color={priceChange >= 0 ? 'success' : 'error'}
@@ -324,7 +362,7 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
               />
             )}
 
-            {showToolbar && (
+            {showToolbar && holdings.length > 0 && (
               <FormControl size="small" sx={{ minWidth: 120 }}>
                 <Select
                   value={selectedSymbol}
@@ -355,33 +393,36 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
           </Box>
         </Box>
 
-        {loading ? (
-          <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
-            <CircularProgress />
-          </Box>
-        ) : historicalData.length > 0 ? (
-          <>
-            <Plot
-              // Add a unique divId to prevent collision and handle unmounting better
-              divId={`chart-${selectedSymbol}-${period}`}
-              data={[...candlestickData, ...volumeData, ...markerData]}
-              layout={layout}
-              config={config}
-              style={{ width: '100%', height: `${height}px` }}
-              useResizeHandler={true}
-            />
+        <Box position="relative" minHeight={`${height}px`}>
+          {loading && (
+            <Box
+              position="absolute"
+              top={0} left={0} right={0} bottom={0}
+              display="flex"
+              justifyContent="center"
+              alignItems="center"
+              bgcolor="rgba(0,0,0,0.3)"
+              zIndex={10}
+            >
+              <CircularProgress />
+            </Box>
+          )}
 
+          <Box style={{ display: historicalData.length > 0 ? 'block' : 'none' }}>
+            <div ref={chartContainerRef} style={{ width: '100%', height: `${height}px` }} />
             <Typography variant="caption" color="textSecondary" sx={{ mt: 1, display: 'block' }}>
-              Updates every minute • Candlestick chart shows OHLC data • Volume bars on secondary axis
-            </Typography>
-          </>
-        ) : (
-          <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
-            <Typography variant="body1" color="textSecondary">
-              No historical data available for {selectedSymbol}
+              TradingView Lightweight Charts • Candlestick & Volume
             </Typography>
           </Box>
-        )}
+
+          {!loading && historicalData.length === 0 && (
+            <Box position="absolute" top={0} left={0} right={0} bottom={0} display="flex" justifyContent="center" alignItems="center">
+              <Typography variant="body1" color="textSecondary">
+                No historical data available for {selectedSymbol}
+              </Typography>
+            </Box>
+          )}
+        </Box>
       </CardContent>
     </Card>
   );

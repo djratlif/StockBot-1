@@ -18,6 +18,12 @@ class AllocationType(enum.Enum):
     PERCENTAGE = "PERCENTAGE"
     FIXED_AMOUNT = "FIXED_AMOUNT"
 
+class StrategyProfile(enum.Enum):
+    BALANCED = "BALANCED"
+    AGGRESSIVE_DAY_TRADER = "AGGRESSIVE_DAY_TRADER"
+    CONSERVATIVE_VALUE = "CONSERVATIVE_VALUE"
+    MOMENTUM_SCALPER = "MOMENTUM_SCALPER"
+
 class User(Base):
     __tablename__ = "users"
     
@@ -96,6 +102,7 @@ class BotConfig(Base):
     portfolio_allocation = Column(Float, nullable=False, default=1.0)  # 1.0 = 100%
     portfolio_allocation_type = Column(Enum(AllocationType), nullable=False, default=AllocationType.PERCENTAGE)
     portfolio_allocation_amount = Column(Float, nullable=False, default=2000.0)
+    strategy_profile = Column(Enum(StrategyProfile), nullable=False, default=StrategyProfile.BALANCED)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
     # Relationships

@@ -72,6 +72,7 @@ export interface BotConfig {
   min_cash_reserve: number;
   portfolio_allocation: number;
   portfolio_allocation_type: 'PERCENTAGE' | 'FIXED_AMOUNT';
+  strategy_profile: 'BALANCED' | 'AGGRESSIVE_DAY_TRADER' | 'CONSERVATIVE_VALUE' | 'MOMENTUM_SCALPER';
   portfolio_allocation_amount: number;
   updated_at: string;
 }

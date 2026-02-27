@@ -21,6 +21,8 @@ class AITradingService:
                                 current_holdings: Dict,
                                 portfolio_value: float,
                                 risk_tolerance: RiskToleranceEnum,
+                                strategy_profile: str,
+                                recent_news: List[Dict],
                                 max_position_size: float,
                                 allocation_exceeded: bool = False,
                                 allocation_overage: float = 0.0,
@@ -68,6 +70,8 @@ class AITradingService:
                 current_holdings=current_holdings,
                 portfolio_value=portfolio_value,
                 risk_tolerance=risk_tolerance,
+                strategy_profile=strategy_profile,
+                recent_news=recent_news,
                 max_position_size=max_position_size,
                 available_cash=available_cash,
                 historical_data=historical_data,
@@ -75,18 +79,83 @@ class AITradingService:
                 allocation_overage=allocation_overage
             )
             
-            # Get AI recommendation
-            response = self.client.chat.completions.create(
-                model=self.model,
+            import asyncio
+            from openai import RateLimitError
+            
+            async def _make_api_call(model, messages, max_tokens, temperature):
+                retries = 3
+                for i in range(retries):
+                    try:
+                        response = self.client.chat.completions.create(
+                            model=model,
+                            messages=messages,
+                            max_tokens=max_tokens,
+                            temperature=temperature
+                        )
+                        return response.choices[0].message.content
+                    except RateLimitError as e:
+                        if i == retries - 1:
+                            logger.error(f"Rate limit exceeded after {retries} retries: {e}")
+                            raise
+                        wait_time = (2 ** i) + 1
+                        logger.warning(f"Rate limit hit. Waiting {wait_time}s before retry...")
+                        await asyncio.sleep(wait_time)
+            
+            # Pass 1: The Trader
+            trader_prompt = f"{prompt}\n\nYou are the TRADER. Provide your analysis and a proposed action (BUY/SELL/HOLD) with quantity and reasoning. DO NOT FORMAT as the final output yet, just give your pitch."
+            
+            # Map strategy profile to a system persona
+            personas = {
+                "BALANCED": "expert stock trader focusing on sustainable growth and diversified long-position building.",
+                "AGGRESSIVE_DAY_TRADER": "aggressive day trader looking for high volatility, volume spikes, and short-term breakouts.",
+                "CONSERVATIVE_VALUE": "conservative value investor akin to Warren Buffet, looking for strong fundamentals, low P/E, and long-term stability.",
+                "MOMENTUM_SCALPER": "momentum scalper trader capitalizing on rapid price changes and moving average crossovers, taking quick profits."
+            }
+            system_persona = personas.get(strategy_profile, personas["BALANCED"])
+            
+            trader_pitch = await _make_api_call(
+                model="gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": "You are an expert stock trader with deep knowledge of market analysis, technical indicators, and risk management."},
-                    {"role": "user", "content": prompt}
+                    {"role": "system", "content": f"You are the TRADER, an {system_persona} Pitch your best trade idea based on the data."},
+                    {"role": "user", "content": trader_prompt}
                 ],
-                max_tokens=500,
-                temperature=0.3  # Lower temperature for more consistent analysis
+                max_tokens=400,
+                temperature=0.5
+            )
+            print(f"\n--- [TRADER AGENT] {symbol} ---")
+            print(trader_pitch)
+            
+            # Pass 2: The Risk Manager
+            risk_prompt = f"Here is the market data:\n{prompt}\n\nHere is the TRADER's pitch:\n{trader_pitch}\n\nYou are the RISK MANAGER. Review the TRADER's pitch. Are there potential downsides? Is the position size too large? Is the market too volatile? Provide your critique and a recommended maximum position size or restriction."
+            
+            risk_critique = await _make_api_call(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": f"You are the RISK MANAGER for an {system_persona} Your job is to strictly enforce risk tolerance and protect capital."},
+                    {"role": "user", "content": risk_prompt}
+                ],
+                max_tokens=400,
+                temperature=0.3
+            )
+            print(f"\n--- [RISK MANAGER AGENT] {symbol} ---")
+            print(risk_critique)
+            
+            # Pass 3: The Executive (Final Decision)
+            executive_prompt = f"Market Data:\n{prompt}\n\nTRADER'S PITCH:\n{trader_pitch}\n\nRISK MANAGER'S CRITIQUE:\n{risk_critique}\n\nYou are the EXECUTIVE. Weigh the pitch against the risk critique. Make the final call.\n\nProvide your response in this EXACT format:\nACTION: [BUY/SELL/HOLD]\nQUANTITY: [number of shares, 0 for HOLD]\nCONFIDENCE: [1-10 scale]\nREASONING: [2-3 sentences explaining your final decision, synthesizing the debate]"
+            
+            ai_response = await _make_api_call(
+                model="gpt-4o",  # Use full model for final decision
+                messages=[
+                    {"role": "system", "content": f"You are the EXECUTIVE overseeing an {system_persona} Make the final trading decision by synthesizing the team's debate."},
+                    {"role": "user", "content": executive_prompt}
+                ],
+                max_tokens=300,
+                temperature=0.2
             )
             
-            ai_response = response.choices[0].message.content
+            print(f"\n--- [EXECUTIVE AGENT] {symbol} ---")
+            print(ai_response)
+            print("-" * 50 + "\n")
             
             # Parse the AI response
             logger.info(f"AI Response for {symbol}: {ai_response[:200]}...")  # Log first 200 chars
@@ -109,6 +178,8 @@ class AITradingService:
                              current_holdings: Dict,
                              portfolio_value: float,
                              risk_tolerance: RiskToleranceEnum,
+                             strategy_profile: str,
+                             recent_news: List[Dict],
                              max_position_size: float,
                              available_cash: float,
                              historical_data,
@@ -145,13 +216,27 @@ Your ONLY permitted actions right now are to SELL existing holdings to bring the
 Do NOT recommend any BUY actions under any circumstances until the portfolio is rebalanced.
 """
         
+        news_context = ""
+        if recent_news:
+            news_items = []
+            for item in recent_news:
+                title = item.get('headline', '')
+                summary = item.get('summary', '')
+                if title:
+                    news_items.append(f"- {title}: {summary}")
+            
+            if news_items:
+                news_text = "\n".join(news_items)
+                news_context = f"\nRECENT NEWS CONTEXT:\n{news_text}\n"
+
         prompt = f"""
 Analyze {stock_info.symbol} for a trading decision. You are managing a portfolio with virtual money for learning purposes.
-
+{news_context}
 CURRENT PORTFOLIO STATUS:
 - Total Portfolio Value: ${portfolio_value:.2f}
 - Available Cash: ${portfolio_cash:.2f}
 - Risk Tolerance: {risk_tolerance.value}
+- Strategy Profile: {strategy_profile}
 - Max Position Size: {max_position_size*100:.1f}% of portfolio
 - Available for this trade: ${available_cash:.2f}
 {allocation_directive}
