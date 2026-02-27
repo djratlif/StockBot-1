@@ -44,6 +44,7 @@ export interface Holding {
   quantity: number;
   average_cost: number;
   current_price: number;
+  ai_provider?: string;
   created_at: string;
   updated_at: string;
 }
@@ -70,6 +71,15 @@ export interface BotConfig {
   stop_loss_percentage: number;
   take_profit_percentage: number;
   min_cash_reserve: number;
+  openai_api_key?: string;
+  openai_active: boolean;
+  openai_allocation: number;
+  gemini_api_key?: string;
+  gemini_active: boolean;
+  gemini_allocation: number;
+  anthropic_api_key?: string;
+  anthropic_active: boolean;
+  anthropic_allocation: number;
   portfolio_allocation: number;
   portfolio_allocation_type: 'PERCENTAGE' | 'FIXED_AMOUNT';
   strategy_profile: 'BALANCED' | 'AGGRESSIVE_DAY_TRADER' | 'CONSERVATIVE_VALUE' | 'MOMENTUM_SCALPER';

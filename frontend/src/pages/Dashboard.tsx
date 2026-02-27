@@ -19,7 +19,10 @@ import {
   TableHead,
   TableRow,
   Paper,
+  useTheme,
 } from '@mui/material';
+import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
+import { Doughnut } from 'react-chartjs-2';
 import {
   TrendingUp,
   TrendingDown,
@@ -35,7 +38,10 @@ import ActivityFeed from '../components/ActivityFeed';
 import AnimatedPrice from '../components/AnimatedPrice';
 import { useWebSocket } from '../contexts/WebSocketContext';
 
+ChartJS.register(ArcElement, Tooltip, Legend);
+
 const Dashboard: React.FC = () => {
+  const theme = useTheme();
   const [portfolioSummary, setPortfolioSummary] = useState<PortfolioSummary | null>(null);
   const [botStatus, setBotStatus] = useState<BotStatus | null>(null);
   const [tradingStats, setTradingStats] = useState<TradingStats | null>(null);
@@ -45,7 +51,7 @@ const Dashboard: React.FC = () => {
   const [toggling, setToggling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
-  
+
   const { lastMessage, isConnected } = useWebSocket();
 
   // Listen for WebSocket updates
@@ -140,6 +146,55 @@ const Dashboard: React.FC = () => {
     );
   }
 
+  const openAIAlloc = botConfig?.openai_allocation || 0;
+  const geminiAlloc = botConfig?.gemini_allocation || 0;
+  const anthropicAlloc = botConfig?.anthropic_allocation || 0;
+  const totalAllocated = openAIAlloc + geminiAlloc + anthropicAlloc;
+  // Use portfolio total_value instead of cash_balance to calculate unallocated to see total funds left out
+  // Or cash_balance? "Unallocated Cash". Let's use portfolio_value - totalAllocated to show where the whole portfolio goes.
+  // Actually, unallocated means Not given to any bot.
+  // The sum of all allocations shouldn't exceed total_value.
+  const unallocated = Math.max(0, (portfolioSummary?.total_value || 0) - totalAllocated);
+
+  const chartData = {
+    labels: ['OpenAI', 'Google Gemini', 'Anthropic Claude', 'Unallocated'],
+    datasets: [
+      {
+        data: [openAIAlloc, geminiAlloc, anthropicAlloc, unallocated],
+        backgroundColor: [
+          theme.palette.primary.main,
+          theme.palette.secondary.main,
+          theme.palette.warning.main,
+          theme.palette.action.disabledBackground,
+        ],
+        borderWidth: 0,
+        hoverOffset: 4
+      },
+    ],
+  };
+
+  const chartOptions = {
+    plugins: {
+      legend: {
+        position: 'right' as const,
+        labels: {
+          color: '#ffffff',
+          font: { size: 10 }
+        }
+      },
+      tooltip: {
+        callbacks: {
+          label: (context: any) => {
+            const value = context.parsed || 0;
+            return ` $${value.toLocaleString()}`;
+          }
+        }
+      }
+    },
+    maintainAspectRatio: false,
+    cutout: '70%',
+  };
+
   return (
     <Box>
 
@@ -214,7 +269,7 @@ const Dashboard: React.FC = () => {
               />
               <Box display="flex" alignItems="center" mt={1}>
                 <Typography variant="body2" color={(portfolioSummary?.daily_change || 0) >= 0 ? 'success.main' : 'error.main'} sx={{ mr: 1 }}>
-                  Today: 
+                  Today:
                 </Typography>
                 <Typography variant="body2" color={(portfolioSummary?.daily_change || 0) >= 0 ? 'success.main' : 'error.main'}>
                   {(portfolioSummary?.daily_change_percent || 0) > 0 ? '+' : ''}{(portfolioSummary?.daily_change_percent || 0).toFixed(2)}%
@@ -248,13 +303,13 @@ const Dashboard: React.FC = () => {
                 <Chip
                   label={
                     botStatus?.is_fetching ? 'Fetching' :
-                    botStatus?.is_analyzing ? 'Analyzing' :
-                    botStatus?.is_active ? 'Active' : 'Inactive'
+                      botStatus?.is_analyzing ? 'Analyzing' :
+                        botStatus?.is_active ? 'Active' : 'Inactive'
                   }
                   color={
                     botStatus?.is_fetching ? 'info' :
-                    botStatus?.is_analyzing ? 'warning' :
-                    botStatus?.is_active ? 'success' : 'default'
+                      botStatus?.is_analyzing ? 'warning' :
+                        botStatus?.is_active ? 'success' : 'default'
                   }
                   size="small"
                 />
@@ -298,80 +353,23 @@ const Dashboard: React.FC = () => {
                   SELL ALL AND STOP BOT
                 </Button>
               )}
-              <Box mt={2} mb={2}>
-                <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
-                  <Typography variant="body2" color="textSecondary">
-                    Portfolio Allocation
-                  </Typography>
-                  <TextField
-                    type="number"
-                    size="small"
-                    value={
-                      botConfig?.portfolio_allocation_type === 'FIXED_AMOUNT'
-                        ? botConfig.portfolio_allocation_amount
-                        : Math.round((portfolioSummary?.total_value || 0) * (botConfig?.portfolio_allocation || 1.0))
-                    }
-                    onChange={(e) => {
-                      const val = parseFloat(e.target.value);
-                      if (isNaN(val)) return;
-                      // Optimistic UI update
-                      setBotConfig(prev => prev ? { 
-                        ...prev, 
-                        portfolio_allocation_type: 'FIXED_AMOUNT',
-                        portfolio_allocation_amount: val
-                      } : null);
-                    }}
-                    onBlur={async (e) => {
-                      const val = parseFloat(e.target.value);
-                      if (isNaN(val) || val < 0) return;
-                      
-                      try {
-                        const updated = await botAPI.updateBotConfig({ 
-                          portfolio_allocation_type: 'FIXED_AMOUNT',
-                          portfolio_allocation_amount: val
-                        });
-                        setBotConfig(updated);
-                      } catch (err) {
-                        console.error('Failed to update allocation amount', err);
-                      }
-                    }}
-                    onKeyDown={async (e) => {
-                      if (e.key === 'Enter') {
-                        const val = parseFloat((e.target as HTMLInputElement).value);
-                        if (isNaN(val) || val < 0) return;
-                        try {
-                          const updated = await botAPI.updateBotConfig({ 
-                            portfolio_allocation_type: 'FIXED_AMOUNT',
-                            portfolio_allocation_amount: val
-                          });
-                          setBotConfig(updated);
-                          (e.target as HTMLInputElement).blur();
-                        } catch (err) {
-                          console.error('Failed to update allocation amount', err);
-                        }
-                      }
-                    }}
-                    InputProps={{
-                      startAdornment: <InputAdornment position="start">$</InputAdornment>,
-                    }}
-                    disabled={!botConfig || !portfolioSummary}
-                    sx={{ 
-                      minWidth: '120px',
-                      maxWidth: '140px',
-                      '& input[type=number]': {
-                        MozAppearance: 'textfield',
-                      },
-                      '& input[type=number]::-webkit-outer-spin-button, & input[type=number]::-webkit-inner-spin-button': {
-                        WebkitAppearance: 'none',
-                        margin: 0,
-                      },
-                    }}
-                  />
-                </Box>
-              </Box>
               <Typography variant="body2" color="textSecondary">
                 Today's Activity: {botStatus?.trades_bought_today || 0} Bought / {botStatus?.trades_sold_today || 0} Sold
               </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Portfolio Distribution Chart */}
+        <Grid item xs={12} md={6} lg={3}>
+          <Card sx={{ height: '100%' }}>
+            <CardContent sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+              <Typography variant="h6" mb={2}>
+                Portfolio Distribution
+              </Typography>
+              <Box sx={{ flexGrow: 1, position: 'relative', minHeight: '150px' }}>
+                <Doughnut data={chartData} options={chartOptions} />
+              </Box>
             </CardContent>
           </Card>
         </Grid>
@@ -452,7 +450,19 @@ const Dashboard: React.FC = () => {
 
                           return (
                             <TableRow key={h.symbol}>
-                              <TableCell sx={{ fontWeight: 'bold' }}>{h.symbol}</TableCell>
+                              <TableCell sx={{ fontWeight: 'bold' }}>
+                                <Box display="flex" alignItems="center" gap={1}>
+                                  {h.symbol}
+                                  {h.ai_provider && (
+                                    <Chip
+                                      label={`${Math.abs(h.quantity)}`}
+                                      size="small"
+                                      color={h.ai_provider === 'OPENAI' ? 'primary' : h.ai_provider === 'GEMINI' ? 'secondary' : 'warning'}
+                                      sx={{ height: 20, fontSize: '0.65rem', fontWeight: 'bold' }}
+                                    />
+                                  )}
+                                </Box>
+                              </TableCell>
                               <TableCell align="right">
                                 {Math.abs(h.quantity)} {isShort ? <Typography component="span" variant="caption" color="error.main">(Short)</Typography> : ''}
                               </TableCell>

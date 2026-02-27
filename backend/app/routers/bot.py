@@ -28,7 +28,13 @@ async def get_bot_config(db: Session = Depends(get_db)):
                 max_daily_trades=5,
                 max_position_size=0.20,
                 risk_tolerance="MEDIUM",
-                is_active=False
+                is_active=False,
+                openai_active=True,
+                openai_allocation=1000.0,
+                gemini_active=False,
+                gemini_allocation=0.0,
+                anthropic_active=False,
+                anthropic_allocation=0.0
             )
             db.add(config)
             db.commit()
@@ -80,7 +86,13 @@ async def get_bot_status(db: Session = Depends(get_db)):
                 max_daily_trades=5,
                 max_position_size=0.20,
                 risk_tolerance="MEDIUM",
-                is_active=False
+                is_active=False,
+                openai_active=True,
+                openai_allocation=1000.0,
+                gemini_active=False,
+                gemini_allocation=0.0,
+                anthropic_active=False,
+                anthropic_allocation=0.0
             )
             db.add(config)
             db.commit()
@@ -149,7 +161,13 @@ async def start_bot(db: Session = Depends(get_db)):
                 max_daily_trades=5,
                 max_position_size=0.20,
                 risk_tolerance="MEDIUM",
-                is_active=False
+                is_active=False,
+                openai_active=True,
+                openai_allocation=1000.0,
+                gemini_active=False,
+                gemini_allocation=0.0,
+                anthropic_active=False,
+                anthropic_allocation=0.0
             )
             db.add(config)
             db.commit()
@@ -269,7 +287,9 @@ async def analyze_stock(symbol: str, db: Session = Depends(get_db)):
             current_holdings=current_holdings,
             portfolio_value=portfolio.total_value,
             risk_tolerance=config.risk_tolerance,
-            max_position_size=config.max_position_size
+            max_position_size=config.max_position_size,
+            ai_provider="OPENAI",
+            api_key=config.openai_api_key
         )
         
         if not decision:
@@ -335,7 +355,9 @@ async def execute_ai_trade(symbol: str, db: Session = Depends(get_db)):
             current_holdings=current_holdings,
             portfolio_value=portfolio.total_value,
             risk_tolerance=config.risk_tolerance,
-            max_position_size=config.max_position_size
+            max_position_size=config.max_position_size,
+            ai_provider="OPENAI",
+            api_key=config.openai_api_key
         )
         
         if not decision:
@@ -403,7 +425,13 @@ async def start_bot_simple(db: Session = Depends(get_db)):
                 max_daily_trades=5,
                 max_position_size=0.20,
                 risk_tolerance="MEDIUM",
-                is_active=False
+                is_active=False,
+                openai_active=True,
+                openai_allocation=1000.0,
+                gemini_active=False,
+                gemini_allocation=0.0,
+                anthropic_active=False,
+                anthropic_allocation=0.0
             )
             db.add(config)
             db.commit()

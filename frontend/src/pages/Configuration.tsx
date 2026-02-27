@@ -141,6 +141,135 @@ const Configuration: React.FC = () => {
       )}
 
       <Grid container spacing={4}>
+        {/* AI Bots Configuration Full Width Row */}
+        <Grid item xs={12}>
+          <Card sx={{ mb: 0 }}>
+            <CardContent sx={{ p: 4 }}>
+              <Box display="flex" alignItems="center" mb={3}>
+                <Security sx={{ mr: 2, color: 'primary.main' }} />
+                <Typography variant="h6" fontWeight="bold">
+                  AI Trading Bots & Allocation
+                </Typography>
+              </Box>
+              <Typography variant="body2" color="textSecondary" mb={4}>
+                Configure individual bot activity status, and define how much cash each bot is allowed to use.
+              </Typography>
+              <Grid container spacing={4}>
+                {/* OpenAI */}
+                <Grid item xs={12} md={4}>
+                  <Box p={3} sx={{ bgcolor: 'background.default', borderRadius: 2, border: '1px solid', borderColor: 'divider', height: '100%', display: 'flex', flexDirection: 'column' }}>
+                    <Box display="flex" justifyContent="space-between" mb={3}>
+                      <Typography variant="subtitle1" fontWeight="bold">OpenAI (ChatGPT)</Typography>
+                      <Chip
+                        label={config.openai_active ? "Enabled" : "Disabled"}
+                        color={config.openai_active ? "success" : "default"}
+                        onClick={() => {
+                          const active = !config.openai_active;
+                          handleChange('openai_active', active);
+                          saveField('openai_active', active);
+                        }}
+                        sx={{ cursor: 'pointer', fontWeight: 'bold' }}
+                      />
+                    </Box>
+                    <Box mt="auto">
+                      <Box display="flex" justifyContent="space-between" mb={1}>
+                        <Typography variant="subtitle2">Allocated Funds</Typography>
+                        <Typography variant="subtitle2" color="primary" fontWeight="bold">
+                          ${config.openai_allocation?.toFixed(0) || 0}
+                        </Typography>
+                      </Box>
+                      <Slider
+                        value={config.openai_allocation || 0}
+                        max={portfolioSummary?.total_value || 10000}
+                        step={50}
+                        onChange={(e, val) => handleChange('openai_allocation', val as number)}
+                        onChangeCommitted={(e, val) => saveField('openai_allocation', val as number)}
+                        valueLabelDisplay="auto"
+                        valueLabelFormat={(v) => `$${v}`}
+                      />
+                    </Box>
+                  </Box>
+                </Grid>
+
+                {/* Google Gemini */}
+                <Grid item xs={12} md={4}>
+                  <Box p={3} sx={{ bgcolor: 'background.default', borderRadius: 2, border: '1px solid', borderColor: 'divider', height: '100%', display: 'flex', flexDirection: 'column' }}>
+                    <Box display="flex" justifyContent="space-between" mb={3}>
+                      <Typography variant="subtitle1" fontWeight="bold">Google Gemini</Typography>
+                      <Chip
+                        label={config.gemini_active ? "Enabled" : "Disabled"}
+                        color={config.gemini_active ? "secondary" : "default"}
+                        onClick={() => {
+                          const active = !config.gemini_active;
+                          handleChange('gemini_active', active);
+                          saveField('gemini_active', active);
+                        }}
+                        sx={{ cursor: 'pointer', fontWeight: 'bold' }}
+                      />
+                    </Box>
+                    <Box mt="auto">
+                      <Box display="flex" justifyContent="space-between" mb={1}>
+                        <Typography variant="subtitle2">Allocated Funds</Typography>
+                        <Typography variant="subtitle2" color="secondary" fontWeight="bold">
+                          ${config.gemini_allocation?.toFixed(0) || 0}
+                        </Typography>
+                      </Box>
+                      <Slider
+                        value={config.gemini_allocation || 0}
+                        max={portfolioSummary?.total_value || 10000}
+                        step={50}
+                        color="secondary"
+                        onChange={(e, val) => handleChange('gemini_allocation', val as number)}
+                        onChangeCommitted={(e, val) => saveField('gemini_allocation', val as number)}
+                        valueLabelDisplay="auto"
+                        valueLabelFormat={(v) => `$${v}`}
+                      />
+                    </Box>
+                  </Box>
+                </Grid>
+
+                {/* Anthropic */}
+                <Grid item xs={12} md={4}>
+                  <Box p={3} sx={{ bgcolor: 'background.default', borderRadius: 2, border: '1px solid', borderColor: 'divider', height: '100%', display: 'flex', flexDirection: 'column' }}>
+                    <Box display="flex" justifyContent="space-between" mb={3}>
+                      <Typography variant="subtitle1" fontWeight="bold">Anthropic Claude</Typography>
+                      <Chip
+                        label={config.anthropic_active ? "Enabled" : "Disabled"}
+                        color={config.anthropic_active ? "warning" : "default"}
+                        onClick={() => {
+                          const active = !config.anthropic_active;
+                          handleChange('anthropic_active', active);
+                          saveField('anthropic_active', active);
+                        }}
+                        sx={{ cursor: 'pointer', fontWeight: 'bold' }}
+                      />
+                    </Box>
+                    <Box mt="auto">
+                      <Box display="flex" justifyContent="space-between" mb={1}>
+                        <Typography variant="subtitle2">Allocated Funds</Typography>
+                        <Typography variant="subtitle2" color="warning.main" fontWeight="bold">
+                          ${config.anthropic_allocation?.toFixed(0) || 0}
+                        </Typography>
+                      </Box>
+                      <Slider
+                        value={config.anthropic_allocation || 0}
+                        max={portfolioSummary?.total_value || 10000}
+                        step={50}
+                        color="warning"
+                        onChange={(e, val) => handleChange('anthropic_allocation', val as number)}
+                        onChangeCommitted={(e, val) => saveField('anthropic_allocation', val as number)}
+                        valueLabelDisplay="auto"
+                        valueLabelFormat={(v) => `$${v}`}
+                      />
+                    </Box>
+                  </Box>
+                </Grid>
+
+              </Grid>
+            </CardContent>
+          </Card>
+        </Grid>
+
         {/* LEFT COLUMN: Trading Strategy & Schedule */}
         <Grid item xs={12} md={7}>
           {/* Trading Strategy Card */}
@@ -276,46 +405,6 @@ const Configuration: React.FC = () => {
                   Portfolio Limits
                 </Typography>
               </Box>
-
-              <Box mb={4}>
-                <Box display="flex" justifyContent="space-between" mb={1}>
-                  <Typography variant="subtitle2" component="label">
-                    Max Allocatable Buying Power
-                  </Typography>
-                  <Typography variant="subtitle2" color="primary" fontWeight="bold">
-                    ${(config?.portfolio_allocation_type === 'FIXED_AMOUNT'
-                      ? config.portfolio_allocation_amount
-                      : Math.round((portfolioSummary?.total_value || 0) * (config?.portfolio_allocation || 1.0))).toFixed(2)}
-                  </Typography>
-                </Box>
-                <Slider
-                  value={
-                    config?.portfolio_allocation_type === 'FIXED_AMOUNT'
-                      ? config.portfolio_allocation_amount
-                      : Math.round((portfolioSummary?.total_value || 0) * (config?.portfolio_allocation || 1.0))
-                  }
-                  max={portfolioSummary?.total_value || 100000}
-                  step={50}
-                  onChange={(e, val) => {
-                    handleChange('portfolio_allocation_type', 'FIXED_AMOUNT');
-                    handleChange('portfolio_allocation_amount', val as number);
-                  }}
-                  onChangeCommitted={(e, val) => {
-                    botAPI.updateBotConfig({
-                      portfolio_allocation_type: 'FIXED_AMOUNT',
-                      portfolio_allocation_amount: val as number
-                    }).then(updated => setConfig(updated))
-                      .catch(err => console.error('Failed to update allocation amount', err));
-                  }}
-                  valueLabelDisplay="auto"
-                  valueLabelFormat={(v) => `$${v}`}
-                />
-                <Typography variant="caption" color="textSecondary">
-                  The absolute ceiling of funds the bot may control across all holdings.
-                </Typography>
-              </Box>
-
-              <Divider sx={{ my: 3 }} />
 
               <Box mb={4}>
                 <Box display="flex" justifyContent="space-between" mb={1}>

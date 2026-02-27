@@ -20,8 +20,8 @@ class TradingBotService:
         self.is_analyzing = False
         self.is_fetching = False
         self.task: Optional[asyncio.Task] = None
-        self.trading_interval = 60  # 1 minute for more frequent trading during testing
-        self.analysis_interval = 60   # 1 minute for market analysis
+        self.trading_interval = 300  # 5 minutes for less frequent rate-limited trading
+        self.analysis_interval = 300   # 5 minutes for market analysis
         self.last_trade_time = None
         self.est = pytz.timezone('US/Eastern')
         
@@ -125,159 +125,178 @@ class TradingBotService:
             
             logger.info(f"Analyzing {len(stocks_to_analyze)} stocks for trading opportunities")
             
+            # Pre-fetch market data sequentially to avoid SQLite connection deadlocks
+            self.is_fetching = True
+            market_data = {}
+            for sym in stocks_to_analyze:
+                try:
+                    info = await stock_service.get_stock_info(sym, db)
+                    history = await stock_service.get_historical_data(sym, period="1mo")
+                    news = await stock_service.fetch_news(sym, limit=3)
+                    if info and history:
+                        market_data[sym] = {
+                            "info": info,
+                            "history": history,
+                            "news": news
+                        }
+                except Exception as e:
+                    logger.error(f"Error prefetching data for {sym}: {e}")
+            self.is_fetching = False
+            
+            # Define active providers and their allocations
+            providers = []
+            if getattr(config, 'openai_active', False) and getattr(config, 'openai_api_key', None):
+                providers.append({
+                    "name": "OPENAI",
+                    "api_key": config.openai_api_key,
+                    "allocation": getattr(config, 'openai_allocation', 0.0)
+                })
+            
+            if getattr(config, 'gemini_active', False) and getattr(config, 'gemini_api_key', None):
+                providers.append({
+                    "name": "GEMINI",
+                    "api_key": config.gemini_api_key,
+                    "allocation": getattr(config, 'gemini_allocation', 0.0)
+                })
+                
+            if getattr(config, 'anthropic_active', False) and getattr(config, 'anthropic_api_key', None):
+                providers.append({
+                    "name": "ANTHROPIC",
+                    "api_key": config.anthropic_api_key,
+                    "allocation": getattr(config, 'anthropic_allocation', 0.0)
+                })
+                
+            if not providers:
+                logger.warning("No active AI providers configured with API keys.")
+                return
+
             # Analyze each stock and collect decisions with timeout
             trading_decisions = []
             
-            # Calculate usable cash based on portfolio allocation
-            allocation_type = getattr(config, 'portfolio_allocation_type', AllocationType.PERCENTAGE)
-            invested = sum(h['quantity'] * h['current_price'] for h in current_holdings.values())
-            
-            if allocation_type.value == 'FIXED_AMOUNT':
-                allocated_limit = getattr(config, 'portfolio_allocation_amount', 2000.0)
-            else:
-                actual_allocation = getattr(config, 'portfolio_allocation', 1.0)
-                allocated_limit = portfolio.total_value * actual_allocation
+            for provider_info in providers:
+                provider_name = provider_info["name"]
+                provider_api_key = provider_info["api_key"]
                 
-            allocation_exceeded = invested > allocated_limit
-            allocation_overage = invested - allocated_limit if allocation_exceeded else 0.0
-            usable_cash = min(portfolio.cash_balance, max(0.0, allocated_limit - invested))
+                # Get current holdings specific to this provider
+                provider_holdings = portfolio_service.get_current_holdings_dict(db, ai_provider=provider_name)
+                
+                # Allocation limits for this specific provider
+                allocated_limit = provider_info["allocation"]
+                invested = sum(h['quantity'] * h['current_price'] for h in provider_holdings.values())
+                
+                allocation_exceeded = invested > allocated_limit
+                allocation_overage = invested - allocated_limit if allocation_exceeded else 0.0
+                usable_cash = min(portfolio.cash_balance, max(0.0, allocated_limit - invested))
 
-            # Log cycle start so the user can see the bot is running and what limits are in effect
-            try:
-                alloc_label = f"${allocated_limit:,.2f} (fixed)" if allocation_type.value == 'FIXED_AMOUNT' else f"${allocated_limit:,.2f} ({getattr(config, 'portfolio_allocation', 1.0)*100:.0f}%)"
-                status_msg = f"OVER LIMIT by ${allocation_overage:,.2f} — bot will only SELL" if allocation_exceeded else f"usable cash: ${usable_cash:,.2f}"
-                cycle_log = ActivityLog(
-                    action="ANALYSIS_CYCLE",
-                    details=f"Starting analysis of {len(stocks_to_analyze)} stocks | Allocation limit: {alloc_label} | Invested: ${invested:,.2f} | {status_msg}",
-                    timestamp=datetime.now(self.est)
-                )
-                db.add(cycle_log)
-                db.commit()
-            except Exception as log_error:
-                logger.error(f"Failed to log analysis cycle: {log_error}")
-
-            for symbol in stocks_to_analyze:
                 try:
-                    # Fetch recent news context
-                    recent_news_data = await stock_service.fetch_news(symbol, limit=3)
-                    
-                    # Add timeout to prevent hanging on API calls
-                    decision = await asyncio.wait_for(
-                        ai_service.analyze_stock_for_trading(
-                            symbol=symbol,
-                            portfolio_cash=usable_cash,
-                            current_holdings=current_holdings,
-                            portfolio_value=portfolio.total_value,
-                            risk_tolerance=config.risk_tolerance,
-                            strategy_profile=getattr(config, 'strategy_profile', 'BALANCED'),
-                            recent_news=recent_news_data,
-                            max_position_size=config.max_position_size,
-                            allocation_exceeded=allocation_exceeded,
-                            allocation_overage=allocation_overage,
-                            db_session=db
-                        ),
-                        timeout=30.0  # 30 second timeout per stock
+                    status_msg = f"OVER LIMIT by ${allocation_overage:,.2f} — bot will only SELL" if allocation_exceeded else f"usable cash: ${usable_cash:,.2f}"
+                    cycle_log = ActivityLog(
+                        action=f"{provider_name}_ANALYSIS_CYCLE",
+                        details=f"Starting analysis of {len(stocks_to_analyze)} stocks | Allocation limit: ${allocated_limit:,.2f} | Invested: ${invested:,.2f} | {status_msg}",
+                        timestamp=datetime.now(self.est)
                     )
-                    
-                    if decision and decision.confidence >= 5:  # Lowered threshold for more trading activity
-                        trading_decisions.append(decision)
-                        logger.info(f"Added trading decision for {symbol}: {decision.action} {decision.quantity} shares (Confidence: {decision.confidence}/10)")
-                    elif decision:
-                        logger.info(f"Low confidence decision for {symbol}: {decision.action} {decision.quantity} shares (Confidence: {decision.confidence}/10) - skipped")
+                    db.add(cycle_log)
+                    db.commit()
+                except Exception as log_error:
+                    logger.error(f"Failed to log analysis cycle: {log_error}")
+
+                for symbol in stocks_to_analyze:
+                    if symbol not in market_data:
+                        logger.warning(f"Skipping {symbol} due to missing pre-fetched market data.")
+                        continue
                         
-                        # Log low confidence decisions to activity feed
+                    stock_data = market_data[symbol]
+                    try:
+                        decision = await asyncio.wait_for(
+                            ai_service.analyze_stock_for_trading(
+                                symbol=symbol,
+                                portfolio_cash=usable_cash,
+                                current_holdings=provider_holdings,
+                                portfolio_value=portfolio.total_value,
+                                risk_tolerance=config.risk_tolerance,
+                                strategy_profile=getattr(config, 'strategy_profile', 'BALANCED'),
+                                recent_news=stock_data["news"],
+                                max_position_size=config.max_position_size,
+                                allocation_exceeded=allocation_exceeded,
+                                allocation_overage=allocation_overage,
+                                db_session=db,
+                                ai_provider=provider_name,
+                                api_key=provider_api_key,
+                                pre_fetched_info=stock_data["info"],
+                                pre_fetched_history=stock_data["history"]
+                            ),
+                            timeout=45.0
+                        )
+                        
+                        if decision and decision.confidence >= 5:
+                            trading_decisions.append(decision)
+                            logger.info(f"Added {provider_name} trading decision for {symbol}: {decision.action} {decision.quantity} shares (Confidence: {decision.confidence}/10)")
+                        elif decision:
+                            logger.info(f"Low confidence decision for {symbol} by {provider_name}: {decision.action} {decision.quantity} shares (Confidence: {decision.confidence}/10) - skipped")
+                            try:
+                                activity = ActivityLog(
+                                    action=f"{provider_name}_LOW_CONFIDENCE",
+                                    details=f"AI suggested {decision.action.value} {decision.quantity} shares of {symbol} but confidence too low ({decision.confidence}/10)",
+                                    timestamp=datetime.now(self.est)
+                                )
+                                db.add(activity)
+                                db.commit()
+                            except Exception as log_error:
+                                logger.error(f"Failed to log low confidence decision: {log_error}")
+                                
+                    except asyncio.TimeoutError:
+                        logger.warning(f"Timeout analyzing {symbol} with {provider_name} - skipping")
                         try:
                             activity = ActivityLog(
-                                action="LOW_CONFIDENCE_DECISION",
-                                details=f"AI suggested {decision.action.value} {decision.quantity} shares of {symbol} but confidence too low ({decision.confidence}/10)",
+                                action=f"{provider_name}_ANALYSIS_TIMEOUT",
+                                details=f"Stock analysis timeout for {symbol} after 30 seconds",
                                 timestamp=datetime.now(self.est)
                             )
                             db.add(activity)
                             db.commit()
                         except Exception as log_error:
-                            logger.error(f"Failed to log low confidence decision: {log_error}")
-                    else:
-                        logger.info(f"No trading decision generated for {symbol}")
-                        
-                except asyncio.TimeoutError:
-                    logger.warning(f"Timeout analyzing {symbol} - skipping")
-                    
-                    # Log timeout to activity feed
-                    try:
-                        activity = ActivityLog(
-                            action="ANALYSIS_TIMEOUT",
-                            details=f"Stock analysis timeout for {symbol} after 30 seconds - API rate limits may be causing delays",
-                            timestamp=datetime.now(self.est)
-                        )
-                        db.add(activity)
-                        db.commit()
-                    except Exception as log_error:
-                        logger.error(f"Failed to log timeout to activity: {log_error}")
-                    
-                    continue
-                except Exception as e:
-                    logger.warning(f"Error analyzing {symbol}: {str(e)}")
-                    
-                    # Log analysis error to activity feed
-                    try:
-                        activity = ActivityLog(
-                            action="ANALYSIS_ERROR",
-                            details=f"Failed to analyze {symbol}: {str(e)}",
-                            timestamp=datetime.now(self.est)
-                        )
-                        db.add(activity)
-                        db.commit()
-                    except Exception as log_error:
-                        logger.error(f"Failed to log analysis error to activity: {log_error}")
-                    
-                    continue
+                            pass
+                        continue
+                    except Exception as e:
+                        logger.warning(f"Error analyzing {symbol} with {provider_name}: {str(e)}")
+                        continue
             
             # Sort decisions by confidence and execute the best ones
             trading_decisions.sort(key=lambda x: x.confidence, reverse=True)
             
             executed_trades = 0
             max_trades_per_cycle = 5  # Allow up to 5 trades per cycle
-
             
             for decision in trading_decisions[:max_trades_per_cycle]:
                 try:
-                    # Double-check we can still make trades - REMOVED LIMIT
-                    # if not portfolio_service.can_make_trade(db, config.max_daily_trades):
-                    #     break
+                    provider_name = decision.ai_provider
+                    allocated_limit = next((p["allocation"] for p in providers if p["name"] == provider_name), 0.0)
                     
-                    # Validate the decision using the newly calculated usable cash
-                    if not ai_service.validate_trading_decision(decision, usable_cash, current_holdings, allocation_exceeded):
-                        logger.warning(f"Invalid or blocked trading decision for {decision.symbol}")
+                    provider_holdings = portfolio_service.get_current_holdings_dict(db, ai_provider=provider_name)
+                    portfolio = portfolio_service.get_portfolio(db)
+                    
+                    invested = sum(h['quantity'] * h['current_price'] for h in provider_holdings.values())
+                    allocation_exceeded = invested > allocated_limit
+                    usable_cash = min(portfolio.cash_balance, max(0.0, allocated_limit - invested))
+
+                    if not ai_service.validate_trading_decision(decision, usable_cash, provider_holdings, allocation_exceeded):
+                        logger.warning(f"Invalid or blocked {provider_name} trading decision for {decision.symbol}")
                         continue
                     
-                    # Execute the trade
                     trade_result = portfolio_service.execute_trade(db, decision)
                     
                     if trade_result:
                         executed_trades += 1
                         self.last_trade_time = datetime.now(self.est)
                         
-                        # Log the trade
                         activity = ActivityLog(
-                            action="AUTO_TRADE",
+                            action=f"{provider_name}_AUTO_TRADE",
                             details=f"Executed {decision.action.value} {decision.quantity} shares of {decision.symbol} at ${decision.current_price:.2f} (Confidence: {decision.confidence}/10)",
                             timestamp=self.last_trade_time
                         )
                         db.add(activity)
                         
-                        logger.info(f"Executed trade: {decision.action.value} {decision.quantity} shares of {decision.symbol}")
-                        
-                        # Update current holdings for next iteration
-                        current_holdings = portfolio_service.get_current_holdings_dict(db)
-
-                        # Recalculate usable cash and allocation status after each trade
-                        portfolio = portfolio_service.get_portfolio(db)
-                        invested = sum(h['quantity'] * h['current_price'] for h in current_holdings.values())
-                        allocation_exceeded = invested > allocated_limit
-                        allocation_overage = invested - allocated_limit if allocation_exceeded else 0.0
-                        usable_cash = min(portfolio.cash_balance, max(0.0, allocated_limit - invested))
-
-                        # Small delay between trades
+                        logger.info(f"Executed trade: {decision.action.value} {decision.quantity} shares of {decision.symbol} by {provider_name}")
                         await asyncio.sleep(5)
                     
                 except Exception as e:

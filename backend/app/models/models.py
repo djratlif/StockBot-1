@@ -64,6 +64,7 @@ class Holdings(Base):
     quantity = Column(Integer, nullable=False)
     average_cost = Column(Float, nullable=False)
     current_price = Column(Float, nullable=False)
+    ai_provider = Column(String(50), nullable=True, default="OPENAI")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
@@ -81,6 +82,7 @@ class Trades(Base):
     price = Column(Float, nullable=False)
     total_amount = Column(Float, nullable=False)
     ai_reasoning = Column(Text, nullable=True)
+    ai_provider = Column(String(50), nullable=True, default="OPENAI")
     executed_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Relationships
@@ -93,6 +95,20 @@ class BotConfig(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     max_daily_trades = Column(Integer, nullable=False, default=5)
     max_position_size = Column(Float, nullable=False, default=0.20)  # 20% of portfolio
+    
+    # API Keys and Allocations
+    openai_api_key = Column(String(255), nullable=True)
+    openai_active = Column(Boolean, nullable=False, default=True)
+    openai_allocation = Column(Float, nullable=False, default=1000.0)
+    
+    gemini_api_key = Column(String(255), nullable=True)
+    gemini_active = Column(Boolean, nullable=False, default=False)
+    gemini_allocation = Column(Float, nullable=False, default=0.0)
+    
+    anthropic_api_key = Column(String(255), nullable=True)
+    anthropic_active = Column(Boolean, nullable=False, default=False)
+    anthropic_allocation = Column(Float, nullable=False, default=0.0)
+    
     risk_tolerance = Column(Enum(RiskTolerance), nullable=False, default=RiskTolerance.MEDIUM)
     trading_hours_start = Column(String(5), nullable=False, default="09:30")  # HH:MM format
     trading_hours_end = Column(String(5), nullable=False, default="16:00")    # HH:MM format

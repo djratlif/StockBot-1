@@ -26,13 +26,17 @@ class AITradingService:
                                 max_position_size: float,
                                 allocation_exceeded: bool = False,
                                 allocation_overage: float = 0.0,
-                                db_session=None) -> Optional[TradingDecision]:
+                                db_session=None,
+                                ai_provider: str = "OPENAI",
+                                api_key: Optional[str] = None,
+                                pre_fetched_info: Optional[StockInfo] = None,
+                                pre_fetched_history: Optional[Dict] = None) -> Optional[TradingDecision]:
         """
         Analyze a stock and make a trading decision using AI
         """
         try:
             # Get current stock information
-            stock_info = await stock_service.get_stock_info(symbol, db_session)
+            stock_info = pre_fetched_info or await stock_service.get_stock_info(symbol, db_session)
             if not stock_info:
                 logger.error(f"Could not fetch stock info for {symbol}")
                 
@@ -54,7 +58,7 @@ class AITradingService:
                 return None
             
             # Get historical data for context
-            historical_data = await stock_service.get_historical_data(symbol, period="1mo")
+            historical_data = pre_fetched_history or await stock_service.get_historical_data(symbol, period="1mo")
             if historical_data is None:
                 logger.error(f"Could not fetch historical data for {symbol}")
                 return None
@@ -86,19 +90,69 @@ class AITradingService:
                 retries = 3
                 for i in range(retries):
                     try:
-                        response = self.client.chat.completions.create(
-                            model=model,
-                            messages=messages,
-                            max_tokens=max_tokens,
-                            temperature=temperature
-                        )
-                        return response.choices[0].message.content
-                    except RateLimitError as e:
+                        if ai_provider == "OPENAI":
+                            client = OpenAI(api_key=api_key or settings.openai_api_key)
+                            response = client.chat.completions.create(
+                                model=model,
+                                messages=messages,
+                                max_tokens=max_tokens,
+                                temperature=temperature
+                            )
+                            return response.choices[0].message.content
+                        elif ai_provider == "GEMINI":
+                            import google.generativeai as genai
+                            genai.configure(api_key=api_key)
+                            model_name = "gemini-1.5-flash" if "mini" in model else "gemini-1.5-pro"
+                            
+                            system_instruction = ""
+                            gemini_messages = []
+                            for msg in messages:
+                                if msg["role"] == "system":
+                                    system_instruction = msg["content"]
+                                elif msg["role"] == "user":
+                                    gemini_messages.append({"role": "user", "parts": [msg["content"]]})
+                                elif msg["role"] == "assistant":
+                                    gemini_messages.append({"role": "model", "parts": [msg["content"]]})
+                            
+                            gemini_model = genai.GenerativeModel(
+                                model_name=model_name,
+                                system_instruction=system_instruction
+                            )
+                            response = gemini_model.generate_content(
+                                gemini_messages,
+                                generation_config=genai.types.GenerationConfig(
+                                    max_output_tokens=max_tokens,
+                                    temperature=temperature
+                                )
+                            )
+                            return response.text
+                        elif ai_provider == "ANTHROPIC":
+                            import anthropic
+                            client = anthropic.Anthropic(api_key=api_key)
+                            model_name = "claude-3-5-haiku-20241022" if "mini" in model else "claude-3-7-sonnet-20250219"
+                            
+                            system_instruction = ""
+                            anthropic_messages = []
+                            for msg in messages:
+                                if msg["role"] == "system":
+                                    system_instruction = msg["content"]
+                                else:
+                                    anthropic_messages.append({"role": msg["role"], "content": msg["content"]})
+                            
+                            response = client.messages.create(
+                                model=model_name,
+                                max_tokens=max_tokens,
+                                temperature=temperature,
+                                system=system_instruction,
+                                messages=anthropic_messages
+                            )
+                            return response.content[0].text
+                    except Exception as e:
                         if i == retries - 1:
                             logger.error(f"Rate limit exceeded after {retries} retries: {e}")
                             raise
                         wait_time = (2 ** i) + 1
-                        logger.warning(f"Rate limit hit. Waiting {wait_time}s before retry...")
+                        logger.warning(f"Rate limit/error hit. Waiting {wait_time}s before retry: {e}")
                         await asyncio.sleep(wait_time)
             
             # Pass 1: The Trader
@@ -162,6 +216,7 @@ class AITradingService:
             decision = self._parse_ai_response(ai_response, stock_info, available_cash)
             
             if decision:
+                decision.ai_provider = ai_provider
                 logger.info(f"AI Decision for {symbol}: {decision.action} {decision.quantity} shares (Confidence: {decision.confidence}/10)")
             else:
                 logger.warning(f"No valid trading decision parsed for {symbol} from AI response")

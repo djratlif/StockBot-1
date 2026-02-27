@@ -8,6 +8,7 @@ import Dashboard from './pages/Dashboard';
 import Portfolio from './pages/Portfolio';
 import Trading from './pages/Trading';
 import Configuration from './pages/Configuration';
+import Account from './pages/Account';
 import Debug from './pages/Debug';
 import { WebSocketProvider } from './contexts/WebSocketContext';
 import Unauthorized from './pages/Unauthorized';
@@ -84,6 +85,7 @@ const AppContent: React.FC = () => {
             <Route path="/portfolio" element={<Portfolio />} />
             <Route path="/trading" element={<Trading />} />
             <Route path="/config" element={<Configuration />} />
+            <Route path="/account" element={<Account />} />
             <Route path="/debug" element={<Debug />} />
           </Routes>
         </Box>

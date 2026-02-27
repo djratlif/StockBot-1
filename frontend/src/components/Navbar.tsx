@@ -160,9 +160,9 @@ const Navbar: React.FC = () => {
             {user?.name}
           </Typography>
           <Box sx={{ display: 'flex', alignItems: 'center', ml: 2, mr: 2 }}>
-            <Chip 
-              icon={isConnected ? <SensorsRounded fontSize="small" /> : <SensorsOffRounded fontSize="small" />} 
-              label={isConnected ? "Live Data" : "Connecting..."} 
+            <Chip
+              icon={isConnected ? <SensorsRounded fontSize="small" /> : <SensorsOffRounded fontSize="small" />}
+              label={isConnected ? "Live Data" : "Connecting..."}
               color={isConnected ? "success" : "default"}
               variant="outlined"
               size="small"
@@ -219,6 +219,15 @@ const Navbar: React.FC = () => {
               <ListItemText>
                 <Typography variant="body2">{user?.email}</Typography>
               </ListItemText>
+            </MenuItem>
+            <MenuItem onClick={() => {
+              navigate('/account');
+              handleProfileMenuClose();
+            }}>
+              <ListItemIcon>
+                <SettingsIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Account Settings</ListItemText>
             </MenuItem>
             <Divider />
             <MenuItem onClick={handleLogout}>

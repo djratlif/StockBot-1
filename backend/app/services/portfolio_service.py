@@ -192,11 +192,6 @@ class PortfolioService:
                 logger.error(f"Failed to submit order for {decision.symbol}")
                 return None
             
-            # Order submitted successfully.
-            # We log it in the Trades table for history.
-            # We DO NOT manually update Holdings/Portfolio here, as that will be synced 
-            # from Alpaca in the next poll cycle.
-            
             trade = Trades(
                 user_id=portfolio.user_id,
                 symbol=decision.symbol,
@@ -205,9 +200,25 @@ class PortfolioService:
                 price=decision.current_price, # Estimated price
                 total_amount=decision.quantity * decision.current_price, # Estimated amount
                 ai_reasoning=decision.reasoning,
+                ai_provider=decision.ai_provider
                 # We can store Alpaca Order ID if we added a column, but for now skipping
             )
             db.add(trade)
+            
+            # Optimistically update holdings if it is a new buy so we don't lose the ai_provider during Alpaca sync
+            if decision.action == TradeActionEnum.BUY:
+                existing_holding = db.query(Holdings).filter(Holdings.symbol == decision.symbol).first()
+                if not existing_holding:
+                    new_holding = Holdings(
+                        user_id=portfolio.user_id,
+                        symbol=decision.symbol,
+                        quantity=0, # Alpaca sync will update real quantity
+                        average_cost=decision.current_price,
+                        current_price=decision.current_price,
+                        ai_provider=decision.ai_provider
+                    )
+                    db.add(new_holding)
+            
             db.commit()
             db.refresh(trade)
             
@@ -340,16 +351,21 @@ class PortfolioService:
             logger.error(f"Error calculating trading stats: {str(e)}")
             return None
     
-    def get_current_holdings_dict(self, db: Session) -> Dict[str, Dict]:
+    def get_current_holdings_dict(self, db: Session, ai_provider: Optional[str] = None) -> Dict[str, Dict]:
         """Get current holdings as a dictionary for AI analysis"""
         try:
-            holdings = db.query(Holdings).all()
+            query = db.query(Holdings)
+            if ai_provider:
+                query = query.filter(Holdings.ai_provider == ai_provider)
+                
+            holdings = query.all()
             result = {}
             for holding in holdings:
                 result[holding.symbol] = {
                     'quantity': holding.quantity,
                     'average_cost': holding.average_cost,
-                    'current_price': holding.current_price
+                    'current_price': holding.current_price,
+                    'ai_provider': holding.ai_provider
                 }
             return result
         except Exception as e:

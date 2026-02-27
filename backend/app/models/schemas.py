@@ -62,6 +62,7 @@ class HoldingBase(BaseModel):
     quantity: int
     average_cost: float
     current_price: float
+    ai_provider: Optional[str] = "OPENAI"
 
 class HoldingResponse(HoldingBase):
     id: int
@@ -79,11 +80,13 @@ class TradeBase(BaseModel):
     price: float
     total_amount: float
     ai_reasoning: Optional[str] = None
+    ai_provider: Optional[str] = "OPENAI"
 
 class TradeCreate(BaseModel):
     symbol: str = Field(..., max_length=10)
     action: TradeActionEnum
     quantity: int
+    ai_provider: Optional[str] = "OPENAI"
 
 class TradeResponse(TradeBase):
     id: int
@@ -102,6 +105,19 @@ class StrategyProfileEnum(str, Enum):
 class BotConfigBase(BaseModel):
     max_daily_trades: int = Field(default=5, ge=1, le=50)
     max_position_size: float = Field(default=0.20, ge=0.01, le=1.0)
+    
+    openai_api_key: Optional[str] = None
+    openai_active: bool = True
+    openai_allocation: float = Field(default=1000.0, ge=0.0)
+    
+    gemini_api_key: Optional[str] = None
+    gemini_active: bool = False
+    gemini_allocation: float = Field(default=0.0, ge=0.0)
+    
+    anthropic_api_key: Optional[str] = None
+    anthropic_active: bool = False
+    anthropic_allocation: float = Field(default=0.0, ge=0.0)
+    
     risk_tolerance: RiskToleranceEnum = RiskToleranceEnum.MEDIUM
     strategy_profile: StrategyProfileEnum = StrategyProfileEnum.BALANCED
     trading_hours_start: str = Field(default="09:30", pattern=r"^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$")
@@ -117,6 +133,19 @@ class BotConfigBase(BaseModel):
 class BotConfigUpdate(BaseModel):
     max_daily_trades: Optional[int] = Field(None, ge=1, le=50)
     max_position_size: Optional[float] = Field(None, ge=0.01, le=1.0)
+    
+    openai_api_key: Optional[str] = None
+    openai_active: Optional[bool] = None
+    openai_allocation: Optional[float] = Field(None, ge=0.0)
+    
+    gemini_api_key: Optional[str] = None
+    gemini_active: Optional[bool] = None
+    gemini_allocation: Optional[float] = Field(None, ge=0.0)
+    
+    anthropic_api_key: Optional[str] = None
+    anthropic_active: Optional[bool] = None
+    anthropic_allocation: Optional[float] = Field(None, ge=0.0)
+    
     risk_tolerance: Optional[RiskToleranceEnum] = None
     strategy_profile: Optional[StrategyProfileEnum] = None
     trading_hours_start: Optional[str] = Field(None, pattern=r"^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$")
@@ -169,6 +198,7 @@ class TradingDecision(BaseModel):
     confidence: int = Field(..., ge=1, le=10)
     reasoning: str
     current_price: float
+    ai_provider: Optional[str] = "OPENAI"
 
 # Portfolio Summary Schema
 class PortfolioSummary(BaseModel):
