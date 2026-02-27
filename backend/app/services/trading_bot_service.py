@@ -174,6 +174,10 @@ class TradingBotService:
             trading_decisions = []
             
             for provider_info in providers:
+                if not self.is_running:
+                    logger.info("Bot execution manually stopped - aborting remaining provider analysis")
+                    break
+
                 provider_name = provider_info["name"]
                 provider_api_key = provider_info["api_key"]
                 
@@ -201,6 +205,10 @@ class TradingBotService:
                     logger.error(f"Failed to log analysis cycle: {log_error}")
 
                 for symbol in stocks_to_analyze:
+                    if not self.is_running:
+                        logger.info(f"Bot execution manually stopped - aborting analysis loop for {provider_name}")
+                        break
+
                     if symbol not in market_data:
                         logger.warning(f"Skipping {symbol} due to missing pre-fetched market data.")
                         continue
@@ -268,6 +276,10 @@ class TradingBotService:
             max_trades_per_cycle = 5  # Allow up to 5 trades per cycle
             
             for decision in trading_decisions[:max_trades_per_cycle]:
+                if not self.is_running:
+                    logger.info("Bot execution manually stopped - aborting pending trade executions.")
+                    break
+
                 try:
                     provider_name = decision.ai_provider
                     allocated_limit = next((p["allocation"] for p in providers if p["name"] == provider_name), 0.0)

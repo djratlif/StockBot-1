@@ -20,6 +20,8 @@ import {
   TableRow,
   Paper,
   useTheme,
+  Tabs,
+  Tab,
 } from '@mui/material';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
 import { Doughnut } from 'react-chartjs-2';
@@ -50,6 +52,8 @@ const Dashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isPanicSelling, setIsPanicSelling] = useState(false);
+  const [filterProvider, setFilterProvider] = useState<string>('ALL');
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
 
   const { lastMessage, isConnected } = useWebSocket();
@@ -335,22 +339,31 @@ const Dashboard: React.FC = () => {
                 <Button
                   variant="contained"
                   color="error"
-                  startIcon={<Warning />}
+                  startIcon={
+                    isPanicSelling
+                      ? <CircularProgress size={18} color="inherit" />
+                      : <Warning />
+                  }
                   onClick={async () => {
                     if (window.confirm("ARE YOU SURE? This will stop the bot and SELL ALL HOLDINGS immediately!")) {
+                      setIsPanicSelling(true);
                       try {
                         await botAPI.panicSell();
                         alert("PANIC SELL TRIGGERED: Bot stopped and all holdings are being liquidated.");
                         fetchDashboardData(true);
                       } catch (error) {
+                        console.error(error);
                         alert("Error executing panic sell. Please check logs.");
+                      } finally {
+                        setIsPanicSelling(false);
                       }
                     }
                   }}
                   fullWidth
+                  disabled={isPanicSelling}
                   sx={{ mb: 1, bgcolor: '#d32f2f', '&:hover': { bgcolor: '#b71c1c' } }}
                 >
-                  SELL ALL AND STOP BOT
+                  {isPanicSelling ? 'SELLING ALL ASSETS...' : 'SELL ALL AND STOP BOT'}
                 </Button>
               )}
               <Typography variant="body2" color="textSecondary">
@@ -401,7 +414,7 @@ const Dashboard: React.FC = () => {
                   <Chip
                     icon={<ShowChart fontSize="small" />}
                     label={`Win Rate: ${tradingStats?.win_rate.toFixed(1) || '0.0'}%`}
-                    color="primary"
+                    color={tradingStats?.win_rate !== undefined && tradingStats.win_rate >= 50 ? "success" : "error"}
                     variant="outlined"
                     size="small"
                   />
@@ -415,9 +428,23 @@ const Dashboard: React.FC = () => {
               </Box>
 
               <Box mt={3} mb={3}>
-                <Typography variant="subtitle2" gutterBottom>
-                  Current Holdings Table
-                </Typography>
+                <Box display="flex" alignItems="center" justifyContent="space-between" mb={1} flexWrap="wrap">
+                  <Typography variant="subtitle2">
+                    Current Holdings Table
+                  </Typography>
+                  <Tabs
+                    value={filterProvider}
+                    onChange={(e, newVal) => setFilterProvider(newVal)}
+                    textColor="inherit"
+                    indicatorColor="primary"
+                    sx={{ minHeight: '36px', '& .MuiTab-root': { minHeight: '36px', py: 0, px: 2, fontSize: '0.8rem' } }}
+                  >
+                    <Tab label="All" value="ALL" />
+                    <Tab label="OpenAI" value="OPENAI" />
+                    <Tab label="Gemini" value="GEMINI" />
+                    <Tab label="Anthropic" value="ANTHROPIC" />
+                  </Tabs>
+                </Box>
                 <TableContainer component={Paper} elevation={0} variant="outlined" sx={{ bgcolor: 'background.default' }}>
                   <Table size="small">
                     <TableHead>
@@ -426,55 +453,74 @@ const Dashboard: React.FC = () => {
                         <TableCell align="right">Qty</TableCell>
                         <TableCell align="right">Avg Cost</TableCell>
                         <TableCell align="right">Current</TableCell>
+                        <TableCell align="right">Value</TableCell>
                         <TableCell align="right">Return</TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
-                      {holdings.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={5} align="center">No active holdings</TableCell>
-                        </TableRow>
-                      ) : (
-                        holdings.map((h) => {
-                          const isShort = h.quantity < 0;
-                          // If shorting, return is mathematically inverted (Avg Cost - Current Price)
-                          // For long: (Current Price - Avg Cost) * Qty
-                          // Our portfolio service might handle the absolute value or short logically, but let's calculate exact dollar return here
-                          // Since qty is negative for short: (Current - Avg) * (-Qty) = (Avg - Current) * Qty = Profit for short
-                          // Thus formula is always: (Current - Avg) * Qty
-                          const totalReturn = (h.current_price - h.average_cost) * h.quantity;
-                          // Return percent depends on the initial investment (absolute quantity * average cost)
-                          const initialInvestment = Math.abs(h.quantity) * h.average_cost;
-                          const returnPercent = initialInvestment > 0 ? (totalReturn / initialInvestment) * 100 : 0;
-                          const isPositive = totalReturn >= 0;
+                      {(() => {
+                        const filteredHoldings = holdings.filter(h => filterProvider === 'ALL' || h.ai_provider === filterProvider);
 
+                        if (filteredHoldings.length === 0) {
                           return (
-                            <TableRow key={h.symbol}>
-                              <TableCell sx={{ fontWeight: 'bold' }}>
-                                <Box display="flex" alignItems="center" gap={1}>
-                                  {h.symbol}
-                                  {h.ai_provider && (
-                                    <Chip
-                                      label={`${Math.abs(h.quantity)}`}
-                                      size="small"
-                                      color={h.ai_provider === 'OPENAI' ? 'primary' : h.ai_provider === 'GEMINI' ? 'secondary' : 'warning'}
-                                      sx={{ height: 20, fontSize: '0.65rem', fontWeight: 'bold' }}
-                                    />
-                                  )}
-                                </Box>
-                              </TableCell>
-                              <TableCell align="right">
-                                {Math.abs(h.quantity)} {isShort ? <Typography component="span" variant="caption" color="error.main">(Short)</Typography> : ''}
-                              </TableCell>
-                              <TableCell align="right">${h.average_cost.toFixed(2)}</TableCell>
-                              <TableCell align="right">${h.current_price.toFixed(2)}</TableCell>
-                              <TableCell align="right" sx={{ color: isPositive ? 'success.main' : 'error.main', fontWeight: 'bold' }}>
-                                {isPositive ? '+' : ''}${totalReturn.toFixed(2)} ({isPositive ? '+' : ''}{returnPercent.toFixed(2)}%)
-                              </TableCell>
+                            <TableRow>
+                              <TableCell colSpan={6} align="center">No active holdings for selected provider</TableCell>
                             </TableRow>
                           );
-                        })
-                      )}
+                        }
+
+                        return (
+                          <>
+                            {filteredHoldings.map((h) => {
+                              const isShort = h.quantity < 0;
+                              // If shorting, return is mathematically inverted (Avg Cost - Current Price)
+                              // For long: (Current Price - Avg Cost) * Qty
+                              // Our portfolio service might handle the absolute value or short logically, but let's calculate exact dollar return here
+                              // Since qty is negative for short: (Current - Avg) * (-Qty) = (Avg - Current) * Qty = Profit for short
+                              // Thus formula is always: (Current - Avg) * Qty
+                              const totalReturn = (h.current_price - h.average_cost) * h.quantity;
+                              const initialInvestment = Math.abs(h.quantity) * h.average_cost;
+                              const returnPercent = initialInvestment > 0 ? (totalReturn / initialInvestment) * 100 : 0;
+                              const isPositive = totalReturn >= 0;
+                              const positionValue = Math.abs(h.quantity) * h.current_price;
+
+                              return (
+                                <TableRow key={h.symbol}>
+                                  <TableCell sx={{ fontWeight: 'bold' }}>
+                                    <Box display="flex" alignItems="center" gap={1}>
+                                      {h.symbol}
+                                      {h.ai_provider && (
+                                        <Chip
+                                          label={`${Math.abs(h.quantity)}`}
+                                          size="small"
+                                          color={h.ai_provider === 'OPENAI' ? 'primary' : h.ai_provider === 'GEMINI' ? 'secondary' : 'warning'}
+                                          sx={{ height: 20, fontSize: '0.65rem', fontWeight: 'bold' }}
+                                        />
+                                      )}
+                                    </Box>
+                                  </TableCell>
+                                  <TableCell align="right">
+                                    {Math.abs(h.quantity)} {isShort ? <Typography component="span" variant="caption" color="error.main">(Short)</Typography> : ''}
+                                  </TableCell>
+                                  <TableCell align="right">${h.average_cost.toFixed(2)}</TableCell>
+                                  <TableCell align="right">${h.current_price.toFixed(2)}</TableCell>
+                                  <TableCell align="right">${positionValue.toFixed(2)}</TableCell>
+                                  <TableCell align="right" sx={{ color: isPositive ? 'success.main' : 'error.main', fontWeight: 'bold' }}>
+                                    {isPositive ? '+' : ''}${totalReturn.toFixed(2)} ({isPositive ? '+' : ''}{returnPercent.toFixed(2)}%)
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                            <TableRow sx={{ '& td, & th': { borderTop: '2px solid rgba(255, 255, 255, 0.2)', fontWeight: 'bold' } }}>
+                              <TableCell colSpan={4} align="right">Total Value:</TableCell>
+                              <TableCell align="right">
+                                ${filteredHoldings.reduce((sum, h) => sum + (Math.abs(h.quantity) * h.current_price), 0).toFixed(2)}
+                              </TableCell>
+                              <TableCell></TableCell>
+                            </TableRow>
+                          </>
+                        );
+                      })()}
                     </TableBody>
                   </Table>
                 </TableContainer>

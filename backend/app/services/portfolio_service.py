@@ -384,11 +384,11 @@ class PortfolioService:
             logger.error(f"Error getting today's trades count: {str(e)}")
             return 0
     
-    async def liquidate_portfolio(self, db: Session) -> Dict[str, Any]:
+    def liquidate_portfolio(self, db: Session) -> Dict[str, Any]:
         """Liquidate all holdings (Panic Sell) via Alpaca"""
         try:
             # Call Alpaca to close all positions
-            # returns list of orders
+            # returns list of orders or a single multi-order object
             orders = alpaca_service.close_all_positions(cancel_orders=True)
             
             results = {
@@ -404,19 +404,18 @@ class PortfolioService:
                  else:
                      return {"error": "Failed to close positions"}
             
-            for order in orders:
-                results["liquidated"].append(f"{order.symbol} ({order.qty} shares)")
-                
-                # We should log these sells in DB too?
-                # The sync will handle removing holdings.
-                # But creating Trade entries for history is good.
-                
-                # Since we don't have exact trade details until fill, maybe just skip logging
-                # individual trades here and let user rely on Alpaca dashboard?
-                # Or create a log.
-                
-                # Let's create an activity log for the panic sell
-                pass
+            # orders might be a list of Position objects or Order objects or a wrapper
+            # If it's iterable, try to extract symbol and qty
+            try:
+                for order in orders:
+                    # Depending on Alpaca's return type for close_all_positions, we might not have symbol directly.
+                    # It usually returns a list of Order objects.
+                    symbol = getattr(order, 'symbol', 'Unknown')
+                    qty = getattr(order, 'qty', 'All')
+                    results["liquidated"].append(f"{symbol} ({qty} shares)")
+            except Exception as e:
+                logger.warning(f"Could not parse Alpaca close_all_positions return type: {e}")
+                results["liquidated"].append("All current positions")
             
             log = ActivityLog(
                 action="PANIC_SELL",

@@ -567,7 +567,7 @@ async def panic_sell(db: Session = Depends(get_db)):
         logger.warning("PANIC SELL TRIGGERED")
         
         # 3. Liquidate Portfolio
-        liquidation_results = await portfolio_service.liquidate_portfolio(db)
+        liquidation_results = portfolio_service.liquidate_portfolio(db)
         
         return APIResponse(
             success=True,
