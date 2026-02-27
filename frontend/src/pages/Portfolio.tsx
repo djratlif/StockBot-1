@@ -92,12 +92,22 @@ const Portfolio: React.FC = () => {
   }, []);
 
   const getReasoningForSymbol = (symbol: string) => {
-    if (!symbol) return null;
+    if (!symbol) return [];
     const buyTrades = trades.filter(t => t.symbol === symbol && t.action === 'BUY');
-    if (buyTrades.length === 0) return null;
+    if (buyTrades.length === 0) return [];
 
-    buyTrades.sort((a, b) => new Date(b.executed_at).getTime() - new Date(a.executed_at).getTime());
-    return buyTrades[0];
+    const latestTradesByProvider = new Map<string, Trade>();
+
+    // Sort oldest to newest so iteration maps the newest trades last
+    const sortedTrades = [...buyTrades].sort((a, b) => new Date(a.executed_at).getTime() - new Date(b.executed_at).getTime());
+
+    sortedTrades.forEach(trade => {
+      const provider = trade.ai_provider || 'OPENAI';
+      latestTradesByProvider.set(provider, trade);
+    });
+
+    return Array.from(latestTradesByProvider.values())
+      .sort((a, b) => new Date(b.executed_at).getTime() - new Date(a.executed_at).getTime());
   };
 
   const selectedTradeContext = useMemo(() => getReasoningForSymbol(selectedChartSymbol), [selectedChartSymbol, trades]);
@@ -294,28 +304,32 @@ const Portfolio: React.FC = () => {
                   <Typography variant="body2" color="textSecondary" sx={{ fontStyle: 'italic' }}>
                     Select a holding to view AI reasoning.
                   </Typography>
-                ) : !selectedTradeContext ? (
+                ) : !selectedTradeContext || selectedTradeContext.length === 0 ? (
                   <Typography variant="body2" color="textSecondary" sx={{ fontStyle: 'italic' }}>
                     No AI reasoning found for {selectedChartSymbol} in recent trades.
                   </Typography>
                 ) : (
                   <Box>
-                    <Typography variant="subtitle1" fontWeight="bold" color="primary.main" gutterBottom>
-                      Trade executed on {new Date(selectedTradeContext.executed_at).toLocaleDateString()}
-                    </Typography>
-                    <Box sx={{ bgcolor: 'rgba(255,255,255,0.05)', p: 2, borderRadius: 2, borderLeft: '4px solid #1976d2' }}>
-                      <Typography variant="body1" sx={{ lineHeight: 1.6 }}>
-                        "{selectedTradeContext.ai_reasoning || "Algorithm initiated trade without explicit reasoning record."}"
-                      </Typography>
-                    </Box>
-                    <Box mt={2}>
-                      <Typography variant="body2" color="textSecondary">
-                        <strong>Bought at:</strong> ${selectedTradeContext.price.toFixed(2)}
-                      </Typography>
-                      <Typography variant="body2" color="textSecondary">
-                        <strong>Quantity:</strong> {selectedTradeContext.quantity}
-                      </Typography>
-                    </Box>
+                    {selectedTradeContext.map(trade => {
+                      const providerColor = trade.ai_provider === 'OPENAI' ? '#1976d2' : trade.ai_provider === 'GEMINI' ? '#9c27b0' : '#ed6c02';
+                      return (
+                        <Box key={trade.id} mb={3}>
+                          <Typography variant="subtitle2" fontWeight="bold" sx={{ color: providerColor }} gutterBottom>
+                            {trade.ai_provider || 'OPENAI'} • Trade executed on {new Date(trade.executed_at).toLocaleDateString()}
+                          </Typography>
+                          <Box sx={{ bgcolor: 'rgba(255,255,255,0.05)', p: 2, borderRadius: 2, borderLeft: `4px solid ${providerColor}` }}>
+                            <Typography variant="body2" sx={{ lineHeight: 1.6 }}>
+                              "{trade.ai_reasoning || "Algorithm initiated trade without explicit reasoning record."}"
+                            </Typography>
+                          </Box>
+                          <Box mt={1}>
+                            <Typography variant="caption" color="textSecondary">
+                              <strong>Bought at:</strong> ${trade.price.toFixed(2)} | <strong>Quantity:</strong> {trade.quantity}
+                            </Typography>
+                          </Box>
+                        </Box>
+                      );
+                    })}
                   </Box>
                 )}
               </CardContent>

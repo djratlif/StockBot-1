@@ -57,6 +57,7 @@ export interface Trade {
   price: number;
   total_amount: number;
   ai_reasoning: string | null;
+  ai_provider?: string;
   executed_at: string;
 }
 

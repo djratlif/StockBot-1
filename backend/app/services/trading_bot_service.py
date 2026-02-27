@@ -173,9 +173,11 @@ class TradingBotService:
             # Analyze each stock and collect decisions with timeout
             trading_decisions = []
             
+            analysis_tasks = []
+            
             for provider_info in providers:
                 if not self.is_running:
-                    logger.info("Bot execution manually stopped - aborting remaining provider analysis")
+                    logger.info("Bot execution manually stopped - aborting remaining provider setup")
                     break
 
                 provider_name = provider_info["name"]
@@ -205,69 +207,82 @@ class TradingBotService:
                     logger.error(f"Failed to log analysis cycle: {log_error}")
 
                 for symbol in stocks_to_analyze:
-                    if not self.is_running:
-                        logger.info(f"Bot execution manually stopped - aborting analysis loop for {provider_name}")
-                        break
-
                     if symbol not in market_data:
                         logger.warning(f"Skipping {symbol} due to missing pre-fetched market data.")
                         continue
                         
                     stock_data = market_data[symbol]
-                    try:
-                        decision = await asyncio.wait_for(
-                            ai_service.analyze_stock_for_trading(
-                                symbol=symbol,
-                                portfolio_cash=usable_cash,
-                                current_holdings=provider_holdings,
-                                portfolio_value=portfolio.total_value,
-                                risk_tolerance=config.risk_tolerance,
-                                strategy_profile=getattr(config, 'strategy_profile', 'BALANCED'),
-                                recent_news=stock_data["news"],
-                                max_position_size=config.max_position_size,
-                                allocation_exceeded=allocation_exceeded,
-                                allocation_overage=allocation_overage,
-                                db_session=db,
-                                ai_provider=provider_name,
-                                api_key=provider_api_key,
-                                pre_fetched_info=stock_data["info"],
-                                pre_fetched_history=stock_data["history"]
-                            ),
-                            timeout=45.0
-                        )
-                        
-                        if decision and decision.confidence >= 5:
-                            trading_decisions.append(decision)
-                            logger.info(f"Added {provider_name} trading decision for {symbol}: {decision.action} {decision.quantity} shares (Confidence: {decision.confidence}/10)")
-                        elif decision:
-                            logger.info(f"Low confidence decision for {symbol} by {provider_name}: {decision.action} {decision.quantity} shares (Confidence: {decision.confidence}/10) - skipped")
-                            try:
-                                activity = ActivityLog(
-                                    action=f"{provider_name}_LOW_CONFIDENCE",
-                                    details=f"AI suggested {decision.action.value} {decision.quantity} shares of {symbol} but confidence too low ({decision.confidence}/10)",
-                                    timestamp=datetime.now(self.est)
-                                )
-                                db.add(activity)
-                                db.commit()
-                            except Exception as log_error:
-                                logger.error(f"Failed to log low confidence decision: {log_error}")
-                                
-                    except asyncio.TimeoutError:
-                        logger.warning(f"Timeout analyzing {symbol} with {provider_name} - skipping")
+                    
+                    async def run_analysis(p_name=provider_name, p_key=provider_api_key, sym=symbol, s_data=stock_data, p_hold=provider_holdings, u_cash=usable_cash, a_exceed=allocation_exceeded, a_over=allocation_overage, p_val=portfolio.total_value):
                         try:
-                            activity = ActivityLog(
-                                action=f"{provider_name}_ANALYSIS_TIMEOUT",
-                                details=f"Stock analysis timeout for {symbol} after 30 seconds",
-                                timestamp=datetime.now(self.est)
+                            decision = await asyncio.wait_for(
+                                ai_service.analyze_stock_for_trading(
+                                    symbol=sym,
+                                    portfolio_cash=u_cash,
+                                    current_holdings=p_hold,
+                                    portfolio_value=p_val,
+                                    risk_tolerance=config.risk_tolerance,
+                                    strategy_profile=getattr(config, 'strategy_profile', 'BALANCED'),
+                                    recent_news=s_data["news"],
+                                    max_position_size=config.max_position_size,
+                                    allocation_exceeded=a_exceed,
+                                    allocation_overage=a_over,
+                                    db_session=None,  # No DB injection to ensure thread-safe concurrent gathers
+                                    ai_provider=p_name,
+                                    api_key=p_key,
+                                    pre_fetched_info=s_data["info"],
+                                    pre_fetched_history=s_data["history"]
+                                ),
+                                timeout=45.0
                             )
-                            db.add(activity)
-                            db.commit()
-                        except Exception as log_error:
-                            pass
-                        continue
-                    except Exception as e:
-                        logger.warning(f"Error analyzing {symbol} with {provider_name}: {str(e)}")
-                        continue
+                            return {"decision": decision, "symbol": sym, "provider": p_name, "error": None}
+                        except asyncio.TimeoutError:
+                            return {"decision": None, "symbol": sym, "provider": p_name, "error": "timeout"}
+                        except Exception as e:
+                            return {"decision": None, "symbol": sym, "provider": p_name, "error": str(e)}
+
+                    analysis_tasks.append(run_analysis())
+
+            # Fire off all compiled tasks simultaneously across all providers and symbols
+            logger.info(f"Executing {len(analysis_tasks)} AI analysis network requests concurrently...")
+            results = await asyncio.gather(*analysis_tasks)
+            
+            if not self.is_running:
+                logger.info("Bot execution manually stopped - aborting processing of decisions.")
+                return
+                
+            # Sequentially process results to safely write to SQLite avoiding locking errors
+            for result in results:
+                decision = result["decision"]
+                symbol = result["symbol"]
+                provider_name = result["provider"]
+                error = result["error"]
+                
+                if error == "timeout":
+                    logger.warning(f"Timeout analyzing {symbol} with {provider_name} - skipping")
+                    try:
+                        db.add(ActivityLog(
+                            action=f"{provider_name}_ANALYSIS_TIMEOUT",
+                            details=f"Stock analysis timeout for {symbol} after 45 seconds",
+                            timestamp=datetime.now(self.est)
+                        ))
+                        db.commit()
+                    except: pass
+                elif error:
+                    logger.warning(f"Error analyzing {symbol} with {provider_name}: {error}")
+                elif decision and decision.confidence >= 5:
+                    trading_decisions.append(decision)
+                    logger.info(f"Added {provider_name} trading decision for {symbol}: {decision.action} {decision.quantity} shares (Confidence: {decision.confidence}/10)")
+                elif decision:
+                    logger.info(f"Low confidence decision for {symbol} by {provider_name}: {decision.action} {decision.quantity} shares (Confidence: {decision.confidence}/10) - skipped")
+                    try:
+                        db.add(ActivityLog(
+                            action=f"{provider_name}_LOW_CONFIDENCE",
+                            details=f"AI suggested {decision.action.value} {decision.quantity} shares of {symbol} but confidence too low ({decision.confidence}/10)",
+                            timestamp=datetime.now(self.est)
+                        ))
+                        db.commit()
+                    except: pass
             
             # Sort decisions by confidence and execute the best ones
             trading_decisions.sort(key=lambda x: x.confidence, reverse=True)

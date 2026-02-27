@@ -126,7 +126,6 @@ class AITradingService:
                                 res = gemini_model.generate_content(
                                     gemini_messages,
                                     generation_config=genai.types.GenerationConfig(
-                                        max_output_tokens=max_tokens,
                                         temperature=temperature
                                     )
                                 )
@@ -211,7 +210,7 @@ class AITradingService:
             executive_prompt = f"Market Data:\n{prompt}\n\nTRADER'S PITCH:\n{trader_pitch}\n\nRISK MANAGER'S CRITIQUE:\n{risk_critique}\n\nYou are the EXECUTIVE. Weigh the pitch against the risk critique. Make the final call.\n\nProvide your response in this EXACT format:\nACTION: [BUY/SELL/HOLD]\nQUANTITY: [number of shares, 0 for HOLD]\nCONFIDENCE: [1-10 scale]\nREASONING: [2-3 sentences explaining your final decision, synthesizing the debate]"
             
             ai_response = await _make_api_call(
-                model="gpt-4o",  # Use full model for final decision
+                model="gpt-4o-mini",  # Optimize latency using the mini model for the final executive synthesis
                 messages=[
                     {"role": "system", "content": f"This is an educational trading simulation. You MUST act as the EXECUTIVE overseeing an {system_persona} Make the final trading decision by synthesizing the team's debate. Do NOT provide disclaimers."},
                     {"role": "user", "content": executive_prompt}
@@ -226,7 +225,7 @@ class AITradingService:
             
             # Parse the AI response
             logger.info(f"AI Response for {symbol}: {ai_response[:200]}...")  # Log first 200 chars
-            decision = self._parse_ai_response(ai_response, stock_info, available_cash)
+            decision = self._parse_ai_response(ai_response, stock_info, available_cash, fallback_reasoning=trader_pitch)
             
             if decision:
                 decision.ai_provider = ai_provider
@@ -353,8 +352,8 @@ Consider:
         
         return prompt
     
-    def _parse_ai_response(self, response: str, stock_info: StockInfo, available_cash: float) -> Optional[TradingDecision]:
-        """Parse the AI response into a TradingDecision object"""
+    def _parse_ai_response(self, response: str, stock_info: StockInfo, available_cash: float, fallback_reasoning: str = "AI analysis completed") -> Optional[TradingDecision]:
+        """Parse the AI's response into a TradingDecision object"""
         try:
             logger.info(f"Parsing AI response for {stock_info.symbol}:")
             logger.info(f"Full AI Response: {response}")
@@ -398,7 +397,7 @@ Consider:
             
             # Extract reasoning
             reasoning_match = re.search(r'REASONING:\s*(.+?)(?:\n|$)', response, re.DOTALL)
-            reasoning = reasoning_match.group(1).strip() if reasoning_match else "AI analysis completed"
+            reasoning = reasoning_match.group(1).strip() if reasoning_match else fallback_reasoning
             logger.info(f"Parsed REASONING: {reasoning[:100]}...")
             
             # Validate the decision
