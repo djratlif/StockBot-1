@@ -118,6 +118,9 @@ class BotConfigBase(BaseModel):
     anthropic_active: bool = False
     anthropic_allocation: float = Field(default=0.0, ge=0.0)
     
+    smtp_email: Optional[str] = None
+    smtp_password: Optional[str] = None
+    
     risk_tolerance: RiskToleranceEnum = RiskToleranceEnum.MEDIUM
     strategy_profile: StrategyProfileEnum = StrategyProfileEnum.BALANCED
     trading_hours_start: str = Field(default="09:30", pattern=r"^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$")
@@ -145,6 +148,9 @@ class BotConfigUpdate(BaseModel):
     anthropic_api_key: Optional[str] = None
     anthropic_active: Optional[bool] = None
     anthropic_allocation: Optional[float] = Field(None, ge=0.0)
+    
+    smtp_email: Optional[str] = None
+    smtp_password: Optional[str] = None
     
     risk_tolerance: Optional[RiskToleranceEnum] = None
     strategy_profile: Optional[StrategyProfileEnum] = None

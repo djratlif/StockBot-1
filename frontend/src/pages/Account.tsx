@@ -9,9 +9,11 @@ import {
     Divider,
     Alert,
     CircularProgress,
-    Grid
+    Grid,
+    Button,
+    Snackbar
 } from '@mui/material';
-import { Security, Person } from '@mui/icons-material';
+import { Security, Person, Email, Save } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
 import { botAPI } from '../services/api';
 import type { BotConfig } from '../services/api';
@@ -21,6 +23,8 @@ const Account: React.FC = () => {
     const [config, setConfig] = useState<BotConfig | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [saving, setSaving] = useState(false);
+    const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
 
     useEffect(() => {
         const fetchConfig = async () => {
@@ -43,14 +47,19 @@ const Account: React.FC = () => {
         setConfig({ ...config, [field]: value });
     };
 
-    const saveField = async (field: keyof BotConfig, value: any) => {
+    const handleSaveSection = async (section: string) => {
         if (!config) return;
         try {
-            const updated = await botAPI.updateBotConfig({ [field]: value });
+            setSaving(true);
+            setError(null);
+            const updated = await botAPI.updateBotConfig(config);
             setConfig(updated);
+            setSaveSuccess(`${section} saved successfully!`);
         } catch (err) {
-            setError(`Failed to save ${field} securely.`);
+            setError(`Failed to save ${section}.`);
             console.error('Save error:', err);
+        } finally {
+            setSaving(false);
         }
     };
 
@@ -129,7 +138,6 @@ const Account: React.FC = () => {
                                 type="password"
                                 value={config?.openai_api_key || ''}
                                 onChange={(e) => handleChange('openai_api_key', e.target.value)}
-                                onBlur={(e) => saveField('openai_api_key', e.target.value)}
                                 helperText="Powers the primary trading agent analysis logic."
                                 InputLabelProps={{ shrink: true }}
                             />
@@ -145,7 +153,6 @@ const Account: React.FC = () => {
                                 type="password"
                                 value={config?.gemini_api_key || ''}
                                 onChange={(e) => handleChange('gemini_api_key', e.target.value)}
-                                onBlur={(e) => saveField('gemini_api_key', e.target.value)}
                                 helperText="Optionally run Google Gemini models for aggregated trading consensus."
                                 InputLabelProps={{ shrink: true }}
                             />
@@ -161,15 +168,94 @@ const Account: React.FC = () => {
                                 type="password"
                                 value={config?.anthropic_api_key || ''}
                                 onChange={(e) => handleChange('anthropic_api_key', e.target.value)}
-                                onBlur={(e) => saveField('anthropic_api_key', e.target.value)}
                                 helperText="Optionally run Anthropic Claude models for aggregated trading consensus."
                                 InputLabelProps={{ shrink: true }}
                             />
                         </Grid>
                     </Grid>
 
+                    <Box mt={3} display="flex" justifyContent="flex-end">
+                        <Button
+                            variant="contained"
+                            color="primary"
+                            startIcon={<Save />}
+                            onClick={() => handleSaveSection('API Keys')}
+                            disabled={saving}
+                        >
+                            {saving ? 'Saving...' : 'Save API Keys'}
+                        </Button>
+                    </Box>
+
                 </CardContent>
             </Card>
+
+            {/* Email Notifications */}
+            <Card sx={{ mt: 4 }}>
+                <CardContent sx={{ p: 4 }}>
+                    <Box display="flex" alignItems="center" mb={3}>
+                        <Email sx={{ mr: 2, color: 'primary.main' }} />
+                        <Typography variant="h6" fontWeight="bold">
+                            Email Notifications
+                        </Typography>
+                    </Box>
+                    <Typography variant="body2" color="textSecondary" mb={4}>
+                        Configure SMTP credentials to receive the Daily Performance Report automatically at 4:05 PM EST. If using Gmail, you must generate an App Password.
+                    </Typography>
+
+                    <Grid container spacing={4}>
+                        {/* SMTP Email */}
+                        <Grid item xs={12} md={6}>
+                            <Typography variant="subtitle1" fontWeight="bold" mb={1}>SMTP Email Address</Typography>
+                            <TextField
+                                fullWidth
+                                placeholder="name@gmail.com"
+                                type="email"
+                                value={config?.smtp_email || ''}
+                                onChange={(e) => handleChange('smtp_email', e.target.value)}
+                                helperText="The email address handling the outbound dispatch (and receiving the report if same)."
+                                InputLabelProps={{ shrink: true }}
+                            />
+                        </Grid>
+
+                        {/* SMTP Password */}
+                        <Grid item xs={12} md={6}>
+                            <Typography variant="subtitle1" fontWeight="bold" mb={1}>SMTP App Password</Typography>
+                            <TextField
+                                fullWidth
+                                placeholder="xxxx xxxx xxxx xxxx"
+                                type="password"
+                                value={config?.smtp_password || ''}
+                                onChange={(e) => handleChange('smtp_password', e.target.value)}
+                                helperText="Your 16-character Google App Password (not your standard sign-in password)."
+                                InputLabelProps={{ shrink: true }}
+                            />
+                        </Grid>
+                    </Grid>
+
+                    <Box mt={3} display="flex" justifyContent="flex-end">
+                        <Button
+                            variant="contained"
+                            color="primary"
+                            startIcon={<Save />}
+                            onClick={() => handleSaveSection('Email Settings')}
+                            disabled={saving}
+                        >
+                            {saving ? 'Saving...' : 'Save Email Settings'}
+                        </Button>
+                    </Box>
+                </CardContent>
+            </Card>
+
+            <Snackbar
+                open={!!saveSuccess}
+                autoHideDuration={4000}
+                onClose={() => setSaveSuccess(null)}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+            >
+                <Alert severity="success" sx={{ width: '100%' }}>
+                    {saveSuccess}
+                </Alert>
+            </Snackbar>
         </Box>
     );
 };

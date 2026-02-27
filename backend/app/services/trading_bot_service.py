@@ -23,6 +23,7 @@ class TradingBotService:
         self.trading_interval = 300  # 5 minutes for less frequent rate-limited trading
         self.analysis_interval = 300   # 5 minutes for market analysis
         self.last_trade_time = None
+        self.last_report_date = None
         self.est = pytz.timezone('US/Eastern')
         
     async def start_continuous_trading(self):
@@ -68,6 +69,22 @@ class TradingBotService:
                         logger.info("Dispatched trading cycle to Celery worker")
                     else:
                         logger.info(f"Market is closed, waiting...")
+                        
+                    # Check if we should send the daily performance email (once per day after 16:05 EST)
+                    now_est = datetime.now(self.est)
+                    if now_est.hour >= 16 and now_est.minute >= 5:
+                        current_date = now_est.date()
+                        if self.last_report_date != current_date:
+                            logger.info(f"Triggering Daily Email Report for {current_date}...")
+                            from app.services.email_service import email_service
+                            success = await email_service.send_daily_report(db)
+                            if success:
+                                self.last_report_date = current_date
+                                logger.info("Daily Email Report dispatched successfully.")
+                            else:
+                                logger.warning("Daily Email Report was not sent (maybe not configured).")
+                                # Still mark it to avoid spamming warnings
+                                self.last_report_date = current_date
                         
                 except Exception as e:
                     logger.error(f"Error triggering trading cycle: {e}")

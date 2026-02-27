@@ -81,6 +81,8 @@ export interface BotConfig {
   anthropic_api_key?: string;
   anthropic_active: boolean;
   anthropic_allocation: number;
+  smtp_email?: string;
+  smtp_password?: string;
   portfolio_allocation: number;
   portfolio_allocation_type: 'PERCENTAGE' | 'FIXED_AMOUNT';
   strategy_profile: 'BALANCED' | 'AGGRESSIVE_DAY_TRADER' | 'CONSERVATIVE_VALUE' | 'MOMENTUM_SCALPER';
@@ -134,6 +136,24 @@ export interface APIResponse {
   data?: any;
 }
 
+export interface AIModelScore {
+  provider: string;
+  trades_today: number;
+  invested_amount: number;
+  current_value: number;
+  open_pnl: number;
+  profitable_positions: number;
+  total_positions: number;
+  win_rate: number;
+  score: number;
+}
+
+export interface DailyReport {
+  date: string;
+  models: AIModelScore[];
+  trades: Trade[];
+}
+
 // Portfolio API
 export const portfolioAPI = {
   getPortfolio: (): Promise<Portfolio> =>
@@ -147,6 +167,9 @@ export const portfolioAPI = {
 
   getTradingStats: (): Promise<TradingStats> =>
     api.get('/api/portfolio/stats').then(res => res.data),
+
+  getDailyReport: (): Promise<DailyReport> =>
+    api.get('/api/trades/report/daily').then(res => res.data),
 
   initializePortfolio: (): Promise<APIResponse> =>
     api.post('/api/portfolio/initialize').then(res => res.data),

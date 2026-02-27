@@ -455,6 +455,94 @@ class PortfolioService:
             logger.error(f"Error getting today's trade counts: {str(e)}")
             return {"bought": 0, "sold": 0, "total": 0}
 
+    def get_daily_report_data(self, db: Session) -> Dict[str, Any]:
+        """Calculates the daily performance metrics for all AI providers"""
+        try:
+            today = date.today()
+            start_of_day = datetime.combine(today, datetime.min.time())
+            
+            # Fetch trades and holdings
+            todays_trades = db.query(Trades).filter(
+                Trades.executed_at >= start_of_day
+            ).order_by(Trades.executed_at.desc()).all()
+            
+            holdings = db.query(Holdings).all()
+            
+            # Fetch overall portfolio totals
+            from app.services.alpaca_service import alpaca_service
+            account = alpaca_service.get_account()
+            portfolio_value = 0.0
+            daily_pnl = 0.0
+            daily_pnl_percent = 0.0
+            
+            if account:
+                portfolio_value = float(account.equity)
+                last_equity = float(account.last_equity)
+                daily_pnl = portfolio_value - last_equity
+                if last_equity > 0:
+                    daily_pnl_percent = (daily_pnl / last_equity) * 100
+            else:
+                portfolio = self.get_portfolio(db)
+                if portfolio:
+                    portfolio_value = portfolio.total_value
+            
+            # Aggregate performance
+            providers = ["OPENAI", "GEMINI", "ANTHROPIC"]
+            model_stats = {}
+            for p in providers:
+                model_stats[p] = {
+                    "provider": p, "trades_today": 0, "invested_amount": 0.0,
+                    "current_value": 0.0, "open_pnl": 0.0, "profitable_positions": 0,
+                    "total_positions": 0, "win_rate": 0.0, "score": 0
+                }
+                
+            for trade in todays_trades:
+                p = trade.ai_provider or "OPENAI"
+                if p in model_stats:
+                    model_stats[p]["trades_today"] += 1
+                    
+            for h in holdings:
+                if h.quantity == 0: continue
+                p = h.ai_provider or "OPENAI"
+                if p not in model_stats:
+                    model_stats[p] = {
+                        "provider": p, "trades_today": 0, "invested_amount": 0.0,
+                        "current_value": 0.0, "open_pnl": 0.0, "profitable_positions": 0,
+                        "total_positions": 0, "win_rate": 0.0, "score": 0
+                    }
+                    
+                invested = abs(h.quantity) * h.average_cost
+                current = abs(h.quantity) * h.current_price
+                pnl = (h.current_price - h.average_cost) * h.quantity
+                
+                model_stats[p]["total_positions"] += 1
+                model_stats[p]["invested_amount"] += invested
+                model_stats[p]["current_value"] += current
+                model_stats[p]["open_pnl"] += pnl
+                if pnl > 0:
+                    model_stats[p]["profitable_positions"] += 1
+                    
+            for p, stats in model_stats.items():
+                if stats["total_positions"] > 0:
+                    stats["win_rate"] = (stats["profitable_positions"] / stats["total_positions"]) * 100
+                
+                pnl_percent = (stats["open_pnl"] / stats["invested_amount"]) * 100 if stats["invested_amount"] > 0 else 0
+                if stats["total_positions"] > 0 or stats["trades_today"] > 0:
+                    score_calc = 50 + (pnl_percent * 2) + (stats["win_rate"] * 0.3)
+                    stats["score"] = max(0, min(100, int(score_calc)))
+                
+            return {
+                "date": today.strftime("%Y-%m-%d"),
+                "models": list(model_stats.values()),
+                "trades": todays_trades,
+                "portfolio_value": portfolio_value,
+                "daily_pnl": daily_pnl,
+                "daily_pnl_percent": daily_pnl_percent
+            }
+        except Exception as e:
+            logger.error(f"Error calculating daily report data: {str(e)}")
+            raise e
+
     def can_make_trade(self, db: Session, max_daily_trades: int) -> bool:
         """Check if we can make another trade today"""
         return True

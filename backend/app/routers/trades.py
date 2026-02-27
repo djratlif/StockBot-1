@@ -158,6 +158,21 @@ async def get_trade_summary(db: Session = Depends(get_db)):
         logger.error(f"Error getting trade summary: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
+@router.get("/report/daily")
+async def get_daily_report(db: Session = Depends(get_db)):
+    """Get detailed daily report of trades and AI model performance"""
+    try:
+        report_data = portfolio_service.get_daily_report_data(db)
+        
+        return {
+            "date": report_data["date"],
+            "models": report_data["models"],
+            "trades": [TradeResponse.from_orm(t) for t in report_data["trades"]]
+        }
+    except Exception as e:
+        logger.error(f"Error generating daily report API response: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 @router.get("/performance/daily")
 async def get_daily_performance(db: Session = Depends(get_db)):
     """Get daily trading performance"""

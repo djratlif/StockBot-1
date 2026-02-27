@@ -109,6 +109,9 @@ class BotConfig(Base):
     anthropic_active = Column(Boolean, nullable=False, default=False)
     anthropic_allocation = Column(Float, nullable=False, default=0.0)
     
+    smtp_email = Column(String(255), nullable=True)
+    smtp_password = Column(String(255), nullable=True)
+    
     risk_tolerance = Column(Enum(RiskTolerance), nullable=False, default=RiskTolerance.MEDIUM)
     trading_hours_start = Column(String(5), nullable=False, default="09:30")  # HH:MM format
     trading_hours_end = Column(String(5), nullable=False, default="16:00")    # HH:MM format

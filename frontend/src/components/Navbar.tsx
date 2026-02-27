@@ -26,6 +26,7 @@ import {
   BugReport as DebugIcon,
   Logout as LogoutIcon,
   Person as PersonIcon,
+  Assessment as ReportIcon,
   Menu as MenuIcon,
   Science as PaperIcon,
   AttachMoney as LiveIcon,
@@ -51,6 +52,7 @@ const Navbar: React.FC = () => {
     { label: 'Portfolio', path: '/portfolio', icon: <PortfolioIcon /> },
     { label: 'Trading', path: '/trading', icon: <TradingIcon /> },
     { label: 'Config', path: '/config', icon: <SettingsIcon /> },
+    { label: 'Report', path: '/report', icon: <ReportIcon /> },
     { label: 'Debug', path: '/debug', icon: <DebugIcon /> },
   ];
 
