@@ -10,16 +10,15 @@ import {
   InputLabel,
   Select,
   MenuItem,
-  Switch,
-  FormControlLabel,
   Box,
   Alert,
   CircularProgress,
   Chip,
   Slider,
   InputAdornment,
+  Divider,
 } from '@mui/material';
-import { PlayArrow, Stop, Warning } from '@mui/icons-material';
+import { PlayArrow, Stop, Warning, Settings, Security, AccessTime } from '@mui/icons-material';
 import { botAPI, portfolioAPI } from '../services/api';
 import type { BotConfig, BotStatus, PortfolioSummary } from '../services/api';
 
@@ -103,290 +102,339 @@ const Configuration: React.FC = () => {
   }
 
   return (
-    <Box>
-      <Typography variant="h4" gutterBottom>
-        Bot Configuration
-      </Typography>
+    <Box sx={{ pb: 6 }}>
+      {/* Page Header */}
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={4}>
+        <Box>
+          <Typography variant="h4" fontWeight="bold" gutterBottom>
+            Bot Configuration
+          </Typography>
+          <Typography variant="body2" color="textSecondary">
+            Manage your AI assistant's trading strategy, boundaries, and risk management parameters.
+          </Typography>
+        </Box>
+        <Box display="flex" alignItems="center" gap={2}>
+          <Chip
+            icon={botStatus?.is_active ? <PlayArrow /> : <Stop />}
+            label={botStatus?.is_active ? 'Bot Active' : 'Bot Inactive'}
+            color={botStatus?.is_active ? 'success' : 'default'}
+            variant={botStatus?.is_active ? 'filled' : 'outlined'}
+            sx={{ fontWeight: 'bold', px: 1 }}
+          />
+          <Button
+            variant="contained"
+            color={botStatus?.is_active ? 'error' : 'success'}
+            startIcon={botStatus?.is_active ? <Stop /> : <PlayArrow />}
+            onClick={handleBotToggle}
+            disableElevation
+            sx={{ fontWeight: 'bold' }}
+          >
+            {botStatus?.is_active ? 'Stop Trading' : 'Start Trading'}
+          </Button>
+        </Box>
+      </Box>
 
       {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
+        <Alert severity="error" sx={{ mb: 3 }}>
           {error}
         </Alert>
       )}
 
-      <Grid container spacing={3}>
-        {/* Trading Parameters */}
-        <Grid item xs={12} md={6}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Trading Parameters
-              </Typography>
-
-              <TextField
-                fullWidth
-                label="Max Daily Trades"
-                type="number"
-                value={config.max_daily_trades}
-                onChange={(e) => handleChange('max_daily_trades', parseInt(e.target.value))}
-                onBlur={(e) => saveField('max_daily_trades', parseInt(e.target.value))}
-                margin="normal"
-                inputProps={{ min: 1, max: 50 }}
-                helperText="Maximum number of trades per day"
-              />
-
-              <TextField
-                fullWidth
-                label="Max Position Size (%)"
-                type="number"
-                value={(config.max_position_size * 100).toFixed(0)}
-                onChange={(e) => handleChange('max_position_size', parseFloat(e.target.value) / 100)}
-                onBlur={(e) => saveField('max_position_size', parseFloat(e.target.value) / 100)}
-                margin="normal"
-                inputProps={{ min: 1, max: 100 }}
-                helperText="Maximum percentage of portfolio per stock"
-              />
-
-              <FormControl fullWidth margin="normal">
-                <InputLabel>Risk Tolerance</InputLabel>
-                <Select
-                  value={config.risk_tolerance}
-                  onChange={(e) => {
-                    handleChange('risk_tolerance', e.target.value);
-                    saveField('risk_tolerance', e.target.value);
-                  }}
-                  label="Risk Tolerance"
-                >
-                  <MenuItem value="LOW">Low</MenuItem>
-                  <MenuItem value="MEDIUM">Medium</MenuItem>
-                  <MenuItem value="HIGH">High</MenuItem>
-                </Select>
-              </FormControl>
-
-              <FormControl fullWidth margin="normal">
-                <InputLabel>Strategy Profile</InputLabel>
-                <Select
-                  value={config.strategy_profile || 'BALANCED'}
-                  onChange={(e) => {
-                    handleChange('strategy_profile', e.target.value);
-                    saveField('strategy_profile', e.target.value);
-                  }}
-                  label="Strategy Profile"
-                >
-                  <MenuItem value="BALANCED">Balanced</MenuItem>
-                  <MenuItem value="AGGRESSIVE_DAY_TRADER">Aggressive Day Trader</MenuItem>
-                  <MenuItem value="CONSERVATIVE_VALUE">Conservative Value</MenuItem>
-                  <MenuItem value="MOMENTUM_SCALPER">Momentum Scalper</MenuItem>
-                </Select>
-              </FormControl>
-
-              <TextField
-                fullWidth
-                label="Min Cash Reserve ($)"
-                type="number"
-                value={config.min_cash_reserve}
-                onChange={(e) => handleChange('min_cash_reserve', parseFloat(e.target.value))}
-                onBlur={(e) => saveField('min_cash_reserve', parseFloat(e.target.value))}
-                margin="normal"
-                inputProps={{ min: 0, step: 0.01 }}
-                helperText="Minimum cash to keep available"
-              />
-            </CardContent>
-          </Card>
-        </Grid>
-
-        {/* Risk Management */}
-        <Grid item xs={12} md={6}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Risk Management
-              </Typography>
-
-              <TextField
-                fullWidth
-                label="Stop Loss (%)"
-                type="number"
-                value={(config.stop_loss_percentage * 100).toFixed(0)}
-                onChange={(e) => handleChange('stop_loss_percentage', parseFloat(e.target.value) / 100)}
-                onBlur={(e) => saveField('stop_loss_percentage', parseFloat(e.target.value) / 100)}
-                margin="normal"
-                inputProps={{ min: -100, max: 0 }}
-                helperText="Automatic sell trigger (negative value)"
-              />
-
-              <TextField
-                fullWidth
-                label="Take Profit (%)"
-                type="number"
-                value={(config.take_profit_percentage * 100).toFixed(0)}
-                onChange={(e) => handleChange('take_profit_percentage', parseFloat(e.target.value) / 100)}
-                onBlur={(e) => saveField('take_profit_percentage', parseFloat(e.target.value) / 100)}
-                margin="normal"
-                inputProps={{ min: 0, max: 500 }}
-                helperText="Automatic sell trigger (positive value)"
-              />
-            </CardContent>
-          </Card>
-        </Grid>
-
-        {/* Trading Hours */}
-        <Grid item xs={12} md={6}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Trading Hours (EST)
-              </Typography>
-
-              <TextField
-                fullWidth
-                label="Trading Start Time"
-                type="time"
-                value={config.trading_hours_start}
-                onChange={(e) => {
-                  handleChange('trading_hours_start', e.target.value);
-                  saveField('trading_hours_start', e.target.value);
-                }}
-                margin="normal"
-                InputLabelProps={{ shrink: true }}
-              />
-
-              <TextField
-                fullWidth
-                label="Trading End Time"
-                type="time"
-                value={config.trading_hours_end}
-                onChange={(e) => {
-                  handleChange('trading_hours_end', e.target.value);
-                  saveField('trading_hours_end', e.target.value);
-                }}
-                margin="normal"
-                InputLabelProps={{ shrink: true }}
-              />
-            </CardContent>
-          </Card>
-        </Grid>
-
-        {/* Bot Control */}
-        <Grid item xs={12} md={6}>
-          <Card>
-            <CardContent>
-              <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
-                <Typography variant="h6">Bot Status</Typography>
-                <Chip
-                  label={botStatus?.is_active ? 'Active' : 'Inactive'}
-                  color={botStatus?.is_active ? 'success' : 'default'}
-                  size="small"
-                />
+      <Grid container spacing={4}>
+        {/* LEFT COLUMN: Trading Strategy & Schedule */}
+        <Grid item xs={12} md={7}>
+          {/* Trading Strategy Card */}
+          <Card sx={{ mb: 4 }}>
+            <CardContent sx={{ p: 4 }}>
+              <Box display="flex" alignItems="center" mb={3}>
+                <Settings sx={{ mr: 2, color: 'primary.main' }} />
+                <Typography variant="h6" fontWeight="bold">
+                  Trading Strategy
+                </Typography>
               </Box>
-              <Button
-                variant="contained"
-                color={botStatus?.is_active ? 'error' : 'success'}
-                startIcon={botStatus?.is_active ? <Stop /> : <PlayArrow />}
-                onClick={handleBotToggle}
-                fullWidth
-                sx={{ mb: 1 }}
-              >
-                {botStatus?.is_active ? 'Stop Bot' : 'Start Bot'}
-              </Button>
-              {botStatus?.is_active && (
-                <Button
-                  variant="contained"
-                  color="error"
-                  startIcon={<Warning />}
-                  onClick={async () => {
-                    if (window.confirm("ARE YOU SURE? This will stop the bot and SELL ALL HOLDINGS immediately!")) {
-                      try {
-                        await botAPI.panicSell();
-                        alert("PANIC SELL TRIGGERED: Bot stopped and all holdings are being liquidated.");
-                        fetchConfig();
-                      } catch (error) {
-                        alert("Error executing panic sell. Please check logs.");
-                      }
-                    }
-                  }}
-                  fullWidth
-                  sx={{ mb: 1, bgcolor: '#d32f2f', '&:hover': { bgcolor: '#b71c1c' } }}
-                >
-                  SELL ALL AND STOP BOT
-                </Button>
-              )}
-              <Box mt={2} mb={2}>
-                <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
-                  <Typography variant="body2" color="textSecondary">
-                    Portfolio Allocation
-                  </Typography>
+
+              <Grid container spacing={3}>
+                <Grid item xs={12} sm={6}>
+                  <FormControl fullWidth>
+                    <InputLabel>Strategy Profile</InputLabel>
+                    <Select
+                      value={config.strategy_profile || 'BALANCED'}
+                      onChange={(e) => {
+                        handleChange('strategy_profile', e.target.value);
+                        saveField('strategy_profile', e.target.value);
+                      }}
+                      label="Strategy Profile"
+                    >
+                      <MenuItem value="BALANCED">Balanced</MenuItem>
+                      <MenuItem value="AGGRESSIVE_DAY_TRADER">Aggressive Day Trader</MenuItem>
+                      <MenuItem value="CONSERVATIVE_VALUE">Conservative Value</MenuItem>
+                      <MenuItem value="MOMENTUM_SCALPER">Momentum Scalper</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <FormControl fullWidth>
+                    <InputLabel>Risk Tolerance</InputLabel>
+                    <Select
+                      value={config.risk_tolerance}
+                      onChange={(e) => {
+                        handleChange('risk_tolerance', e.target.value);
+                        saveField('risk_tolerance', e.target.value);
+                      }}
+                      label="Risk Tolerance"
+                    >
+                      <MenuItem value="LOW">Low</MenuItem>
+                      <MenuItem value="MEDIUM">Medium</MenuItem>
+                      <MenuItem value="HIGH">High</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Grid>
+
+                <Grid item xs={12} sm={6}>
                   <TextField
+                    fullWidth
+                    label="Max Daily Trades"
                     type="number"
-                    size="small"
-                    value={
-                      config?.portfolio_allocation_type === 'FIXED_AMOUNT'
-                        ? config.portfolio_allocation_amount
-                        : Math.round((portfolioSummary?.total_value || 0) * (config?.portfolio_allocation || 1.0))
-                    }
-                    onChange={(e) => {
-                      const val = parseFloat(e.target.value);
-                      if (isNaN(val)) return;
-                      // Optimistic UI update
-                      setConfig(prev => prev ? { 
-                        ...prev, 
-                        portfolio_allocation_type: 'FIXED_AMOUNT',
-                        portfolio_allocation_amount: val
-                      } : null);
-                    }}
-                    onBlur={async (e) => {
-                      const val = parseFloat(e.target.value);
-                      if (isNaN(val) || val < 0) return;
-                      
-                      try {
-                        const updated = await botAPI.updateBotConfig({ 
-                          portfolio_allocation_type: 'FIXED_AMOUNT',
-                          portfolio_allocation_amount: val
-                        });
-                        setConfig(updated);
-                      } catch (err) {
-                        console.error('Failed to update allocation amount', err);
-                      }
-                    }}
-                    onKeyDown={async (e) => {
-                      if (e.key === 'Enter') {
-                        const val = parseFloat((e.target as HTMLInputElement).value);
-                        if (isNaN(val) || val < 0) return;
-                        try {
-                          const updated = await botAPI.updateBotConfig({ 
-                            portfolio_allocation_type: 'FIXED_AMOUNT',
-                            portfolio_allocation_amount: val
-                          });
-                          setConfig(updated);
-                          (e.target as HTMLInputElement).blur();
-                        } catch (err) {
-                          console.error('Failed to update allocation amount', err);
-                        }
-                      }
-                    }}
+                    value={config.max_daily_trades}
+                    onChange={(e) => handleChange('max_daily_trades', parseInt(e.target.value))}
+                    onBlur={(e) => saveField('max_daily_trades', parseInt(e.target.value))}
+                    inputProps={{ min: 1, max: 50 }}
+                    helperText="Limit the bot's activity per session."
+                  />
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    fullWidth
+                    label="Minimum Cash Reserve"
+                    type="number"
+                    value={config.min_cash_reserve}
+                    onChange={(e) => handleChange('min_cash_reserve', parseFloat(e.target.value))}
+                    onBlur={(e) => saveField('min_cash_reserve', parseFloat(e.target.value))}
                     InputProps={{
                       startAdornment: <InputAdornment position="start">$</InputAdornment>,
                     }}
-                    disabled={!portfolioSummary}
-                    sx={{ 
-                      minWidth: '120px',
-                      maxWidth: '140px',
-                      '& input[type=number]': {
-                        MozAppearance: 'textfield',
-                      },
-                      '& input[type=number]::-webkit-outer-spin-button, & input[type=number]::-webkit-inner-spin-button': {
-                        WebkitAppearance: 'none',
-                        margin: 0,
-                      },
-                    }}
+                    inputProps={{ min: 0, step: 0.01 }}
+                    helperText="Keep this amount uninvested at all times."
                   />
-                </Box>
-              </Box>
-              <Typography variant="body2" color="textSecondary" sx={{ mt: 2 }}>
-                When active, the bot will automatically analyze and trade stocks during market hours using the allocated amount.
-              </Typography>
+                </Grid>
+              </Grid>
             </CardContent>
           </Card>
+
+          {/* Schedule Card */}
+          <Card>
+            <CardContent sx={{ p: 4 }}>
+              <Box display="flex" alignItems="center" mb={3}>
+                <AccessTime sx={{ mr: 2, color: 'primary.main' }} />
+                <Typography variant="h6" fontWeight="bold">
+                  Trading Window
+                </Typography>
+              </Box>
+              <Typography variant="body2" color="textSecondary" mb={3}>
+                The bot will only execute orders within these specified times (EST).
+              </Typography>
+              <Grid container spacing={3}>
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    fullWidth
+                    label="Session Start"
+                    type="time"
+                    value={config.trading_hours_start}
+                    onChange={(e) => {
+                      handleChange('trading_hours_start', e.target.value);
+                      saveField('trading_hours_start', e.target.value);
+                    }}
+                    InputLabelProps={{ shrink: true }}
+                  />
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    fullWidth
+                    label="Session End"
+                    type="time"
+                    value={config.trading_hours_end}
+                    onChange={(e) => {
+                      handleChange('trading_hours_end', e.target.value);
+                      saveField('trading_hours_end', e.target.value);
+                    }}
+                    InputLabelProps={{ shrink: true }}
+                  />
+                </Grid>
+              </Grid>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* RIGHT COLUMN: Limits & Danger Zone */}
+        <Grid item xs={12} md={5}>
+          {/* Risk Management Card */}
+          <Card sx={{ mb: 4 }}>
+            <CardContent sx={{ p: 4 }}>
+              <Box display="flex" alignItems="center" mb={3}>
+                <Security sx={{ mr: 2, color: 'primary.main' }} />
+                <Typography variant="h6" fontWeight="bold">
+                  Portfolio Limits
+                </Typography>
+              </Box>
+
+              <Box mb={4}>
+                <Box display="flex" justifyContent="space-between" mb={1}>
+                  <Typography variant="subtitle2" component="label">
+                    Max Allocatable Buying Power
+                  </Typography>
+                  <Typography variant="subtitle2" color="primary" fontWeight="bold">
+                    ${(config?.portfolio_allocation_type === 'FIXED_AMOUNT'
+                      ? config.portfolio_allocation_amount
+                      : Math.round((portfolioSummary?.total_value || 0) * (config?.portfolio_allocation || 1.0))).toFixed(2)}
+                  </Typography>
+                </Box>
+                <Slider
+                  value={
+                    config?.portfolio_allocation_type === 'FIXED_AMOUNT'
+                      ? config.portfolio_allocation_amount
+                      : Math.round((portfolioSummary?.total_value || 0) * (config?.portfolio_allocation || 1.0))
+                  }
+                  max={portfolioSummary?.total_value || 100000}
+                  step={50}
+                  onChange={(e, val) => {
+                    handleChange('portfolio_allocation_type', 'FIXED_AMOUNT');
+                    handleChange('portfolio_allocation_amount', val as number);
+                  }}
+                  onChangeCommitted={(e, val) => {
+                    botAPI.updateBotConfig({
+                      portfolio_allocation_type: 'FIXED_AMOUNT',
+                      portfolio_allocation_amount: val as number
+                    }).then(updated => setConfig(updated))
+                      .catch(err => console.error('Failed to update allocation amount', err));
+                  }}
+                  valueLabelDisplay="auto"
+                  valueLabelFormat={(v) => `$${v}`}
+                />
+                <Typography variant="caption" color="textSecondary">
+                  The absolute ceiling of funds the bot may control across all holdings.
+                </Typography>
+              </Box>
+
+              <Divider sx={{ my: 3 }} />
+
+              <Box mb={4}>
+                <Box display="flex" justifyContent="space-between" mb={1}>
+                  <Typography variant="subtitle2" component="label">
+                    Max Position Size
+                  </Typography>
+                  <Typography variant="subtitle2" fontWeight="bold">
+                    {(config.max_position_size * 100).toFixed(0)}%
+                  </Typography>
+                </Box>
+                <Slider
+                  value={config.max_position_size * 100}
+                  min={1}
+                  max={100}
+                  step={1}
+                  onChange={(e, val) => handleChange('max_position_size', (val as number) / 100)}
+                  onChangeCommitted={(e, val) => saveField('max_position_size', (val as number) / 100)}
+                  valueLabelDisplay="auto"
+                  valueLabelFormat={(v) => `${v}%`}
+                />
+                <Typography variant="caption" color="textSecondary">
+                  Limit any single asset from occupying more than this % of the portfolio.
+                </Typography>
+              </Box>
+
+              <Box mb={4}>
+                <Box display="flex" justifyContent="space-between" mb={1}>
+                  <Typography variant="subtitle2" component="label">
+                    Take Profit Threshold
+                  </Typography>
+                  <Typography variant="subtitle2" color="success.main" fontWeight="bold">
+                    +{(config.take_profit_percentage * 100).toFixed(0)}%
+                  </Typography>
+                </Box>
+                <Slider
+                  value={config.take_profit_percentage * 100}
+                  min={1}
+                  max={200}
+                  step={1}
+                  color="success"
+                  onChange={(e, val) => handleChange('take_profit_percentage', (val as number) / 100)}
+                  onChangeCommitted={(e, val) => saveField('take_profit_percentage', (val as number) / 100)}
+                  valueLabelDisplay="auto"
+                  valueLabelFormat={(v) => `+${v}%`}
+                />
+                <Typography variant="caption" color="textSecondary">
+                  Automatically liquidate a holding to lock in gains at this %.
+                </Typography>
+              </Box>
+
+              <Box>
+                <Box display="flex" justifyContent="space-between" mb={1}>
+                  <Typography variant="subtitle2" component="label">
+                    Stop Loss Threshold
+                  </Typography>
+                  <Typography variant="subtitle2" color="error.main" fontWeight="bold">
+                    {(config.stop_loss_percentage * 100).toFixed(0)}%
+                  </Typography>
+                </Box>
+                <Slider
+                  value={config.stop_loss_percentage * 100}
+                  min={-50}
+                  max={-1}
+                  step={1}
+                  color="error"
+                  onChange={(e, val) => handleChange('stop_loss_percentage', (val as number) / 100)}
+                  onChangeCommitted={(e, val) => saveField('stop_loss_percentage', (val as number) / 100)}
+                  valueLabelDisplay="auto"
+                  valueLabelFormat={(v) => `${v}%`}
+                />
+                <Typography variant="caption" color="textSecondary">
+                  Automatically liquidate a holding to stop bleeding at this %.
+                </Typography>
+              </Box>
+
+            </CardContent>
+          </Card>
+
+          {/* Danger Zone */}
+          <Card sx={{ border: '2px solid rgba(244,67,54,0.3)', bgcolor: 'rgba(244,67,54,0.03)' }}>
+            <CardContent sx={{ p: 4 }}>
+              <Box display="flex" alignItems="center" mb={2} color="error.main">
+                <Warning sx={{ mr: 1 }} />
+                <Typography variant="h6" fontWeight="bold">
+                  Danger Zone
+                </Typography>
+              </Box>
+              <Typography variant="body2" color="textSecondary" mb={3}>
+                Immediately halt bot operations and liquidate all active market holdings at the current bid price. Action cannot be undone.
+              </Typography>
+              <Button
+                variant="contained"
+                startIcon={<Warning />}
+                disabled={!botStatus?.is_active}
+                onClick={async () => {
+                  if (window.confirm("ARE YOU SURE? This will stop the bot and SELL ALL HOLDINGS immediately!")) {
+                    try {
+                      await botAPI.panicSell();
+                      alert("PANIC SELL TRIGGERED: Bot stopped and all holdings are being liquidated.");
+                      fetchConfig();
+                    } catch (error) {
+                      alert("Error executing panic sell. Please check logs.");
+                    }
+                  }
+                }}
+                fullWidth
+                sx={{
+                  py: 1.5,
+                  bgcolor: botStatus?.is_active ? '#d32f2f' : 'action.disabledBackground',
+                  color: botStatus?.is_active ? 'white' : 'text.disabled',
+                  fontWeight: 'bold',
+                  '&:hover': { bgcolor: '#b71c1c' }
+                }}
+              >
+                SELL ALL AND STOP BOT
+              </Button>
+            </CardContent>
+          </Card>
+
         </Grid>
       </Grid>
     </Box>
