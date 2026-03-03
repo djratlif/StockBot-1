@@ -99,29 +99,21 @@ class PortfolioService:
             local_holdings = db.query(Holdings).all()
             local_map = {h.symbol: h for h in local_holdings}
             
-            # Update or Delete local holdings
+            # Update or Delete local holdings based on Alpaca data
+            # Rule: Don't overwrite quantity (since AI models track their slice independently)
+            # but do delete if Alpaca has 0 shares altogether
             for holding in local_holdings:
                 if holding.symbol in alpaca_map:
-                    # Update
+                    # Update only the current price so value calculations remain accurate
                     pos = alpaca_map[holding.symbol]
-                    holding.quantity = int(pos.qty)
-                    holding.average_cost = float(pos.avg_entry_price)
                     holding.current_price = float(pos.current_price)
                 else:
-                    # Delete (no longer in Alpaca)
+                    # Delete (no longer deeply in Alpaca, e.g. liquidated)
                     db.delete(holding)
             
-            # Create new local holdings
-            for symbol, pos in alpaca_map.items():
-                if symbol not in local_map:
-                    new_holding = Holdings(
-                        user_id=portfolio.user_id,
-                        symbol=symbol,
-                        quantity=int(pos.qty),
-                        average_cost=float(pos.avg_entry_price),
-                        current_price=float(pos.current_price)
-                    )
-                    db.add(new_holding)
+            # Don't create new holdings generically. 
+            # We want trades executed by the bot to create the AI-specific holding rows.
+            # E.g. manual buys in Alpaca UI won't be assigned an AI provider, so we skip adding them here.
             
             db.commit()
             
@@ -205,19 +197,37 @@ class PortfolioService:
             )
             db.add(trade)
             
-            # Optimistically update holdings if it is a new buy so we don't lose the ai_provider during Alpaca sync
+            # Update specific AI's holdings
+            provider = decision.ai_provider or "OPENAI"
+            holding = db.query(Holdings).filter(
+                Holdings.symbol == decision.symbol,
+                Holdings.ai_provider == provider
+            ).first()
+
             if decision.action == TradeActionEnum.BUY:
-                existing_holding = db.query(Holdings).filter(Holdings.symbol == decision.symbol).first()
-                if not existing_holding:
+                if holding:
+                    # Update existing holding for this specific AI
+                    total_quantity = holding.quantity + decision.quantity
+                    new_total_cost = (holding.quantity * holding.average_cost) + (decision.quantity * decision.current_price)
+                    holding.average_cost = new_total_cost / total_quantity
+                    holding.quantity = total_quantity
+                    holding.current_price = decision.current_price
+                else:
+                    # Create new holding strictly for this AI
                     new_holding = Holdings(
                         user_id=portfolio.user_id,
                         symbol=decision.symbol,
-                        quantity=0, # Alpaca sync will update real quantity
+                        quantity=decision.quantity,
                         average_cost=decision.current_price,
                         current_price=decision.current_price,
-                        ai_provider=decision.ai_provider
+                        ai_provider=provider
                     )
                     db.add(new_holding)
+            elif decision.action == TradeActionEnum.SELL:
+                if holding:
+                    holding.quantity -= decision.quantity
+                    if holding.quantity <= 0:
+                        db.delete(holding)
             
             db.commit()
             db.refresh(trade)
@@ -403,6 +413,9 @@ class PortfolioService:
                      return {"message": "No positions to liquidate", "count": 0}
                  else:
                      return {"error": "Failed to close positions"}
+            
+            # Delete all local holdings because the portfolio is completely dumped on Alpaca
+            db.query(Holdings).delete()
             
             # orders might be a list of Position objects or Order objects or a wrapper
             # If it's iterable, try to extract symbol and qty

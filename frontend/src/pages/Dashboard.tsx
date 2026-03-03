@@ -485,7 +485,7 @@ const Dashboard: React.FC = () => {
                               const positionValue = Math.abs(h.quantity) * h.current_price;
 
                               return (
-                                <TableRow key={h.symbol}>
+                                <TableRow key={h.id}>
                                   <TableCell sx={{ fontWeight: 'bold' }}>
                                     <Box display="flex" alignItems="center" gap={1}>
                                       {h.symbol}

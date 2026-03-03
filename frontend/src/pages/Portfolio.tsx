@@ -243,7 +243,7 @@ const Portfolio: React.FC = () => {
 
                       return (
                         <TableRow
-                          key={h.symbol}
+                          key={h.id}
                           hover
                           onClick={() => setSelectedChartSymbol(h.symbol)}
                           sx={{

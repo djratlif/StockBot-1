@@ -139,7 +139,7 @@ class AITradingService:
                         elif ai_provider == "ANTHROPIC":
                             import anthropic
                             client = anthropic.Anthropic(api_key=api_key)
-                            model_name = "claude-haiku-4-5-20251001" if "mini" in model else "claude-sonnet-4-6"
+                            model_name = "claude-3-haiku-20240307" if "mini" in model else "claude-sonnet-4-5-20250929"
                             
                             system_instruction = ""
                             anthropic_messages = []
