@@ -58,7 +58,7 @@ class EmailService:
                         <p style="font-size: 24px; font-weight: bold; margin: 5px 0;">{model['score']} <span style="font-size: 14px; color: #666; font-weight: normal;">pts</span></p>
                         <table style="width: 100%; font-size: 14px; color: #555;">
                             <tr>
-                                <td><strong>Open PnL:</strong> <span style="color: {pnl_color};">${model['open_pnl']:.2f}</span></td>
+                                <td><strong>Daily Profit/Loss:</strong> <span style="color: {pnl_color};">${model['open_pnl']:.2f}</span></td>
                                 <td><strong>Win Rate:</strong> {model['win_rate']:.1f}%</td>
                             </tr>
                             <tr>

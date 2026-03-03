@@ -488,6 +488,16 @@ class PortfolioService:
             daily_pnl = 0.0
             daily_pnl_percent = 0.0
             
+            alpaca_positions = alpaca_service.get_positions()
+            intraday_pl_per_share = {}
+            for pos in alpaca_positions:
+                try:
+                    qty = float(pos.qty)
+                    if qty != 0:
+                        intraday_pl_per_share[pos.symbol] = float(pos.unrealized_intraday_pl) / qty
+                except Exception:
+                    pass
+            
             if account:
                 portfolio_value = float(account.equity)
                 last_equity = float(account.last_equity)
@@ -508,6 +518,62 @@ class PortfolioService:
                     "current_value": 0.0, "open_pnl": 0.0, "profitable_positions": 0,
                     "total_positions": 0, "win_rate": 0.0, "score": 0
                 }
+            
+            # --- START FIFO REALIZED PNL & WIN RATE CALCULATION ---
+            # To get accurate win rate and realized PNL, we have to run a light chronological FIFO simulation
+            from app.models.models import TradeAction
+            all_trades = db.query(Trades).order_by(Trades.executed_at.asc()).all()
+            
+            queues = {"OPENAI": {}, "GEMINI": {}, "ANTHROPIC": {}}
+            realized_pnls = {"OPENAI": 0.0, "GEMINI": 0.0, "ANTHROPIC": 0.0}
+            winning_sells = {"OPENAI": 0, "GEMINI": 0, "ANTHROPIC": 0}
+            total_sells = {"OPENAI": 0, "GEMINI": 0, "ANTHROPIC": 0}
+
+            # Naive start of day for accurate comparison vs naive db times
+            start_naive = start_of_day.replace(tzinfo=None)
+
+            for trade in all_trades:
+                p = trade.ai_provider or "OPENAI"
+                if p not in queues:
+                    queues[p] = {}
+                    realized_pnls[p] = 0.0
+                    winning_sells[p] = 0
+                    total_sells[p] = 0
+                
+                if trade.symbol not in queues[p]:
+                    queues[p][trade.symbol] = []
+
+                if trade.action == TradeAction.BUY:
+                    queues[p][trade.symbol].append({"qty": trade.quantity, "price": trade.price})
+                elif trade.action == TradeAction.SELL:
+                    qty = trade.quantity
+                    profit = 0.0
+                    while qty > 0 and queues[p][trade.symbol]:
+                        buy = queues[p][trade.symbol][0]
+                        if buy["qty"] <= qty:
+                            profit += (trade.price - buy["price"]) * buy["qty"]
+                            qty -= buy["qty"]
+                            queues[p][trade.symbol].pop(0)
+                        else:
+                            profit += (trade.price - buy["price"]) * qty
+                            buy["qty"] -= qty
+                            qty = 0
+                    
+            exec_naive = trade.executed_at.replace(tzinfo=None) if trade.executed_at else None
+            # Compare naively to start of day naive since sqlite typically returns naive anyway or UTC
+            if exec_naive and exec_naive >= start_naive:
+                if p not in total_sells:
+                    total_sells[p] = 0
+                if p not in realized_pnls:
+                    realized_pnls[p] = 0.0
+                if p not in winning_sells:
+                    winning_sells[p] = 0
+                
+                realized_pnls[p] += profit
+                total_sells[p] += 1
+                if profit > 0:
+                    winning_sells[p] += 1
+            # --- END FIFO REALIZED PNL ---
                 
             for trade in todays_trades:
                 p = trade.ai_provider or "OPENAI"
@@ -526,31 +592,53 @@ class PortfolioService:
                     
                 invested = abs(h.quantity) * h.average_cost
                 current = abs(h.quantity) * h.current_price
-                pnl = (h.current_price - h.average_cost) * h.quantity
                 
                 model_stats[p]["total_positions"] += 1
                 model_stats[p]["invested_amount"] += invested
                 model_stats[p]["current_value"] += current
-                model_stats[p]["open_pnl"] += pnl
+                
+                # We need pnl here for profitable_positions and a fallback
+                pnl = (h.current_price - h.average_cost) * h.quantity
+                intraday_pnl = h.quantity * intraday_pl_per_share.get(h.symbol, 0.0)
+                
+                if "open_pnl" not in model_stats[p]:
+                    model_stats[p]["open_pnl"] = 0
+                model_stats[p]["open_pnl"] += intraday_pnl
                 if pnl > 0:
                     model_stats[p]["profitable_positions"] += 1
                     
             for p, stats in model_stats.items():
-                if stats["total_positions"] > 0:
+                if p in total_sells and total_sells[p] > 0:
+                    stats["win_rate"] = (winning_sells[p] / total_sells[p]) * 100
+                elif stats["total_positions"] > 0:
+                    # Fallback to open positions if no sells today
                     stats["win_rate"] = (stats["profitable_positions"] / stats["total_positions"]) * 100
+                    
+                # Add the REALIZED PNL to the open_pnl slot so it shows on the UI accurately
+                if p in realized_pnls:
+                    stats["open_pnl"] += realized_pnls[p]
                 
+                # Use daily realized Pnl fraction + Win Rate for the score calculation
                 pnl_percent = (stats["open_pnl"] / stats["invested_amount"]) * 100 if stats["invested_amount"] > 0 else 0
-                if stats["total_positions"] > 0 or stats["trades_today"] > 0:
+                if total_sells.get(p, 0) > 0 or stats["trades_today"] > 0:
                     score_calc = 50 + (pnl_percent * 2) + (stats["win_rate"] * 0.3)
                     stats["score"] = max(0, min(100, int(score_calc)))
-                
+            
+            # Recalculate top level PnL explicitly from the sum of what the models actually outputted 
+            # so performance exactly matches regardless of unseen manual Alpaca actions.
+            actual_daily_pnl = sum(stats.get("open_pnl", 0.0) for stats in model_stats.values())
+            
+            # If we don't have last_equity from Alpaca, we can use portfolio_value to approximate today's start size
+            start_portfolio_value = portfolio_value - actual_daily_pnl if portfolio_value > 0 else 1
+            calculated_daily_pnl_percent = (actual_daily_pnl / start_portfolio_value) * 100
+
             return {
                 "date": today.strftime("%Y-%m-%d"),
                 "models": list(model_stats.values()),
                 "trades": todays_trades,
                 "portfolio_value": portfolio_value,
-                "daily_pnl": daily_pnl,
-                "daily_pnl_percent": daily_pnl_percent
+                "daily_pnl": actual_daily_pnl,
+                "daily_pnl_percent": calculated_daily_pnl_percent
             }
         except Exception as e:
             logger.error(f"Error calculating daily report data: {str(e)}")

@@ -28,6 +28,7 @@ const Configuration: React.FC = () => {
   const [portfolioSummary, setPortfolioSummary] = useState<PortfolioSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [savingSections, setSavingSections] = useState<Record<string, boolean>>({});
 
   const fetchConfig = async () => {
     try {
@@ -65,14 +66,25 @@ const Configuration: React.FC = () => {
     }
   };
 
-  const saveField = async (field: keyof BotConfig, value: any) => {
+
+
+  const handleSaveSection = async (sectionName: string, fields: (keyof BotConfig)[]) => {
     if (!config) return;
+    setSavingSections(prev => ({ ...prev, [sectionName]: true }));
     try {
-      const updated = await botAPI.updateBotConfig({ [field]: value });
+      const partialConfig: Partial<BotConfig> = {};
+      fields.forEach(f => {
+        (partialConfig as any)[f] = config[f];
+      });
+      const updated = await botAPI.updateBotConfig(partialConfig);
       setConfig(updated);
     } catch (err) {
-      setError(`Failed to update ${field}`);
+      setError(`Failed to save ${sectionName}`);
       console.error('Save error:', err);
+    } finally {
+      setTimeout(() => {
+        setSavingSections(prev => ({ ...prev, [sectionName]: false }));
+      }, 500);
     }
   };
 
@@ -164,9 +176,7 @@ const Configuration: React.FC = () => {
                         label={config.openai_active ? "Enabled" : "Disabled"}
                         color={config.openai_active ? "success" : "default"}
                         onClick={() => {
-                          const active = !config.openai_active;
-                          handleChange('openai_active', active);
-                          saveField('openai_active', active);
+                          handleChange('openai_active', !config.openai_active);
                         }}
                         sx={{ cursor: 'pointer', fontWeight: 'bold' }}
                       />
@@ -183,7 +193,6 @@ const Configuration: React.FC = () => {
                         max={portfolioSummary?.total_value || 10000}
                         step={50}
                         onChange={(e, val) => handleChange('openai_allocation', val as number)}
-                        onChangeCommitted={(e, val) => saveField('openai_allocation', val as number)}
                         valueLabelDisplay="auto"
                         valueLabelFormat={(v) => `$${v}`}
                       />
@@ -200,9 +209,7 @@ const Configuration: React.FC = () => {
                         label={config.gemini_active ? "Enabled" : "Disabled"}
                         color={config.gemini_active ? "secondary" : "default"}
                         onClick={() => {
-                          const active = !config.gemini_active;
-                          handleChange('gemini_active', active);
-                          saveField('gemini_active', active);
+                          handleChange('gemini_active', !config.gemini_active);
                         }}
                         sx={{ cursor: 'pointer', fontWeight: 'bold' }}
                       />
@@ -220,7 +227,6 @@ const Configuration: React.FC = () => {
                         step={50}
                         color="secondary"
                         onChange={(e, val) => handleChange('gemini_allocation', val as number)}
-                        onChangeCommitted={(e, val) => saveField('gemini_allocation', val as number)}
                         valueLabelDisplay="auto"
                         valueLabelFormat={(v) => `$${v}`}
                       />
@@ -237,9 +243,7 @@ const Configuration: React.FC = () => {
                         label={config.anthropic_active ? "Enabled" : "Disabled"}
                         color={config.anthropic_active ? "warning" : "default"}
                         onClick={() => {
-                          const active = !config.anthropic_active;
-                          handleChange('anthropic_active', active);
-                          saveField('anthropic_active', active);
+                          handleChange('anthropic_active', !config.anthropic_active);
                         }}
                         sx={{ cursor: 'pointer', fontWeight: 'bold' }}
                       />
@@ -257,11 +261,24 @@ const Configuration: React.FC = () => {
                         step={50}
                         color="warning"
                         onChange={(e, val) => handleChange('anthropic_allocation', val as number)}
-                        onChangeCommitted={(e, val) => saveField('anthropic_allocation', val as number)}
                         valueLabelDisplay="auto"
                         valueLabelFormat={(v) => `$${v}`}
                       />
                     </Box>
+                  </Box>
+                </Grid>
+
+                <Grid item xs={12}>
+                  <Box display="flex" justifyContent="flex-end">
+                    <Button
+                      variant="contained"
+                      color="primary"
+                      disabled={savingSections['ai']}
+                      onClick={() => handleSaveSection('ai', ['openai_active', 'openai_allocation', 'gemini_active', 'gemini_allocation', 'anthropic_active', 'anthropic_allocation'])}
+                      startIcon={savingSections['ai'] ? <CircularProgress size={20} /> : undefined}
+                    >
+                      {savingSections['ai'] ? 'Saving...' : 'Save AI Allocations'}
+                    </Button>
                   </Box>
                 </Grid>
 
@@ -290,7 +307,6 @@ const Configuration: React.FC = () => {
                       value={config.strategy_profile || 'BALANCED'}
                       onChange={(e) => {
                         handleChange('strategy_profile', e.target.value);
-                        saveField('strategy_profile', e.target.value);
                       }}
                       label="Strategy Profile"
                     >
@@ -308,7 +324,6 @@ const Configuration: React.FC = () => {
                       value={config.risk_tolerance}
                       onChange={(e) => {
                         handleChange('risk_tolerance', e.target.value);
-                        saveField('risk_tolerance', e.target.value);
                       }}
                       label="Risk Tolerance"
                     >
@@ -326,7 +341,6 @@ const Configuration: React.FC = () => {
                     type="number"
                     value={config.max_daily_trades}
                     onChange={(e) => handleChange('max_daily_trades', parseInt(e.target.value))}
-                    onBlur={(e) => saveField('max_daily_trades', parseInt(e.target.value))}
                     inputProps={{ min: 1, max: 50 }}
                     helperText="Limit the bot's activity per session."
                   />
@@ -338,13 +352,25 @@ const Configuration: React.FC = () => {
                     type="number"
                     value={config.min_cash_reserve}
                     onChange={(e) => handleChange('min_cash_reserve', parseFloat(e.target.value))}
-                    onBlur={(e) => saveField('min_cash_reserve', parseFloat(e.target.value))}
                     InputProps={{
                       startAdornment: <InputAdornment position="start">$</InputAdornment>,
                     }}
                     inputProps={{ min: 0, step: 0.01 }}
                     helperText="Keep this amount uninvested at all times."
                   />
+                </Grid>
+                <Grid item xs={12}>
+                  <Box display="flex" justifyContent="flex-end">
+                    <Button
+                      variant="contained"
+                      color="primary"
+                      disabled={savingSections['strategy']}
+                      onClick={() => handleSaveSection('strategy', ['strategy_profile', 'risk_tolerance', 'max_daily_trades', 'min_cash_reserve'])}
+                      startIcon={savingSections['strategy'] ? <CircularProgress size={20} /> : undefined}
+                    >
+                      {savingSections['strategy'] ? 'Saving...' : 'Save Strategy'}
+                    </Button>
+                  </Box>
                 </Grid>
               </Grid>
             </CardContent>
@@ -371,7 +397,6 @@ const Configuration: React.FC = () => {
                     value={config.trading_hours_start}
                     onChange={(e) => {
                       handleChange('trading_hours_start', e.target.value);
-                      saveField('trading_hours_start', e.target.value);
                     }}
                     InputLabelProps={{ shrink: true }}
                   />
@@ -384,10 +409,22 @@ const Configuration: React.FC = () => {
                     value={config.trading_hours_end}
                     onChange={(e) => {
                       handleChange('trading_hours_end', e.target.value);
-                      saveField('trading_hours_end', e.target.value);
                     }}
                     InputLabelProps={{ shrink: true }}
                   />
+                </Grid>
+                <Grid item xs={12}>
+                  <Box display="flex" justifyContent="flex-end">
+                    <Button
+                      variant="contained"
+                      color="primary"
+                      disabled={savingSections['schedule']}
+                      onClick={() => handleSaveSection('schedule', ['trading_hours_start', 'trading_hours_end'])}
+                      startIcon={savingSections['schedule'] ? <CircularProgress size={20} /> : undefined}
+                    >
+                      {savingSections['schedule'] ? 'Saving...' : 'Save Schedule'}
+                    </Button>
+                  </Box>
                 </Grid>
               </Grid>
             </CardContent>
@@ -421,7 +458,6 @@ const Configuration: React.FC = () => {
                   max={100}
                   step={1}
                   onChange={(e, val) => handleChange('max_position_size', (val as number) / 100)}
-                  onChangeCommitted={(e, val) => saveField('max_position_size', (val as number) / 100)}
                   valueLabelDisplay="auto"
                   valueLabelFormat={(v) => `${v}%`}
                 />
@@ -446,7 +482,6 @@ const Configuration: React.FC = () => {
                   step={1}
                   color="success"
                   onChange={(e, val) => handleChange('take_profit_percentage', (val as number) / 100)}
-                  onChangeCommitted={(e, val) => saveField('take_profit_percentage', (val as number) / 100)}
                   valueLabelDisplay="auto"
                   valueLabelFormat={(v) => `+${v}%`}
                 />
@@ -471,13 +506,24 @@ const Configuration: React.FC = () => {
                   step={1}
                   color="error"
                   onChange={(e, val) => handleChange('stop_loss_percentage', (val as number) / 100)}
-                  onChangeCommitted={(e, val) => saveField('stop_loss_percentage', (val as number) / 100)}
                   valueLabelDisplay="auto"
                   valueLabelFormat={(v) => `${v}%`}
                 />
                 <Typography variant="caption" color="textSecondary">
                   Automatically liquidate a holding to stop bleeding at this %.
                 </Typography>
+              </Box>
+
+              <Box mt={2} display="flex" justifyContent="flex-end">
+                <Button
+                  variant="contained"
+                  color="primary"
+                  disabled={savingSections['limits']}
+                  onClick={() => handleSaveSection('limits', ['max_position_size', 'take_profit_percentage', 'stop_loss_percentage'])}
+                  startIcon={savingSections['limits'] ? <CircularProgress size={20} /> : undefined}
+                >
+                  {savingSections['limits'] ? 'Saving...' : 'Save Limits'}
+                </Button>
               </Box>
 
             </CardContent>
