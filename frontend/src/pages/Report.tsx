@@ -55,7 +55,7 @@ const Report: React.FC = () => {
     const getProviderColor = (provider: string) => {
         switch (provider) {
             case 'OPENAI': return '#1976d2';
-            case 'GEMINI': return '#9c27b0';
+            case 'GEMINI': return '#dc004e';
             case 'ANTHROPIC': return '#ed6c02';
             default: return '#757575';
         }
@@ -143,7 +143,6 @@ const Report: React.FC = () => {
                 <Table>
                     <TableHead>
                         <TableRow>
-                            <TableCell>Time</TableCell>
                             <TableCell>Symbol</TableCell>
                             <TableCell>Action</TableCell>
                             <TableCell>Quantity</TableCell>
@@ -155,12 +154,11 @@ const Report: React.FC = () => {
                     <TableBody>
                         {report.trades.length === 0 ? (
                             <TableRow>
-                                <TableCell colSpan={7} align="center">No trades executed today.</TableCell>
+                                <TableCell colSpan={6} align="center">No trades executed today.</TableCell>
                             </TableRow>
                         ) : (
                             report.trades.map((trade) => (
                                 <TableRow key={trade.id}>
-                                    <TableCell>{new Date(trade.executed_at).toLocaleTimeString()}</TableCell>
                                     <TableCell sx={{ fontWeight: 'bold' }}>{trade.symbol}</TableCell>
                                     <TableCell>
                                         <Chip

@@ -113,8 +113,8 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
       if (trades && trades.length > 0) {
         const buyTrades = trades.filter(t => t.symbol === symbol && t.action === 'BUY');
         if (buyTrades.length > 0) {
-          buyTrades.sort((a, b) => new Date(a.executed_at).getTime() - new Date(b.executed_at).getTime());
-          const firstBuyDate = new Date(buyTrades[0].executed_at);
+          buyTrades.sort((a, b) => new Date(a.executed_at!).getTime() - new Date(b.executed_at!).getTime());
+          const firstBuyDate = new Date(buyTrades[0].executed_at!);
           const now = new Date();
           const diffTime = Math.abs(now.getTime() - firstBuyDate.getTime());
           const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
@@ -262,7 +262,7 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
           // Find the closest candlestick time that is on or before the trade time, 
           // or just map directly if intraday markers are supported (lightweight charts ties markers to exact data point times)
           // To be safe and ensure the marker shows up, we should snap it to the exact time of the nearest data point.
-          const tradeTime = Math.floor(new Date(t.executed_at).getTime() / 1000);
+          const tradeTime = Math.floor(new Date(t.executed_at!).getTime() / 1000);
 
           let closestPoint = uniqueFormattedData[0];
           let minDiff = Infinity;

@@ -72,7 +72,7 @@ class TradingBotService:
                         
                     # Check if we should send the daily performance email (once per day after 16:05 EST)
                     now_est = datetime.now(self.est)
-                    if now_est.hour >= 16 and now_est.minute >= 5:
+                    if now_est.hour > 16 or (now_est.hour == 16 and now_est.minute >= 5):
                         current_date = now_est.date()
                         if self.last_report_date != current_date:
                             logger.info(f"Triggering Daily Email Report for {current_date}...")

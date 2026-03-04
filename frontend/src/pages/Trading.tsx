@@ -195,7 +195,7 @@ const Trading: React.FC = () => {
                 </Box>
                 <Box>
                   <Typography variant="h3" color="secondary.main">
-                    {trades.filter(t => new Date(t.executed_at) > new Date(Date.now() - 24 * 60 * 60 * 1000)).length}
+                    {trades.filter(t => new Date(t.executed_at!).getTime() > Date.now() - 24 * 60 * 60 * 1000).length}
                   </Typography>
                   <Typography variant="body2" color="textSecondary">
                     Trades Today

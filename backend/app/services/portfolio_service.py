@@ -631,11 +631,32 @@ class PortfolioService:
             # If we don't have last_equity from Alpaca, we can use portfolio_value to approximate today's start size
             start_portfolio_value = portfolio_value - actual_daily_pnl if portfolio_value > 0 else 1
             calculated_daily_pnl_percent = (actual_daily_pnl / start_portfolio_value) * 100
+            
+            # Summarize today's trades
+            trade_summaries = {}
+            for t in todays_trades:
+                p = t.ai_provider or "OPENAI"
+                key = f"{t.symbol}_{t.action.value}_{p}"
+                if key not in trade_summaries:
+                    trade_summaries[key] = {
+                        "id": key,
+                        "symbol": t.symbol,
+                        "action": t.action.value,
+                        "quantity": 0,
+                        "total_amount": 0.0,
+                        "ai_provider": p
+                    }
+                trade_summaries[key]["quantity"] += t.quantity
+                trade_summaries[key]["total_amount"] += t.total_amount
+                
+            summarized_trades = list(trade_summaries.values())
+            for st in summarized_trades:
+                st["price"] = st["total_amount"] / st["quantity"] if st["quantity"] > 0 else 0
 
             return {
                 "date": today.strftime("%Y-%m-%d"),
                 "models": list(model_stats.values()),
-                "trades": todays_trades,
+                "trades": summarized_trades,
                 "portfolio_value": portfolio_value,
                 "daily_pnl": actual_daily_pnl,
                 "daily_pnl_percent": calculated_daily_pnl_percent

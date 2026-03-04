@@ -40,7 +40,7 @@ class EmailService:
                     <h3 style="border-bottom: 2px solid #1976d2; padding-bottom: 5px; color: #1976d2;">AI Model Leaderboard</h3>
         """
         
-        colors = {"OPENAI": "#1976d2", "GEMINI": "#9c27b0", "ANTHROPIC": "#ed6c02"}
+        colors = {"OPENAI": "#1976d2", "GEMINI": "#dc004e", "ANTHROPIC": "#ed6c02"}
         medals = ["🥇 1st Place", "🥈 2nd Place", "🥉 3rd Place"]
         
         for idx, model in enumerate(models):
@@ -90,17 +90,17 @@ class EmailService:
             html += """<tr><td colspan="6" style="padding: 10px; text-align: center; color: #888;">No trades executed today.</td></tr>"""
         else:
             for trade in trades:
-                provider = trade.ai_provider or "OPENAI"
+                provider = trade.get("ai_provider", "OPENAI")
                 color = colors.get(provider, "#757575")
-                action_color = "green" if trade.action.value == "BUY" else "red"
+                action_color = "green" if trade["action"] == "BUY" else "red"
                 
                 html += f"""
                             <tr>
-                                <td style="padding: 8px; border-bottom: 1px solid #eee; font-weight: bold;">{trade.symbol}</td>
-                                <td style="padding: 8px; border-bottom: 1px solid #eee; color: {action_color}; font-weight: bold;">{trade.action.value}</td>
-                                <td style="padding: 8px; border-bottom: 1px solid #eee;">{trade.quantity}</td>
-                                <td style="padding: 8px; border-bottom: 1px solid #eee;">${trade.price:.2f}</td>
-                                <td style="padding: 8px; border-bottom: 1px solid #eee;">${trade.total_amount:.2f}</td>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee; font-weight: bold;">{trade["symbol"]}</td>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee; color: {action_color}; font-weight: bold;">{trade["action"]}</td>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;">{trade["quantity"]}</td>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;">${trade["price"]:.2f}</td>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;">${trade["total_amount"]:.2f}</td>
                                 <td style="padding: 8px; border-bottom: 1px solid #eee;">
                                     <span style="background-color: {color}; color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px;">{provider}</span>
                                 </td>

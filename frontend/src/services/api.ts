@@ -50,7 +50,7 @@ export interface Holding {
 }
 
 export interface Trade {
-  id: number;
+  id: number | string;
   symbol: string;
   action: 'BUY' | 'SELL';
   quantity: number;
@@ -58,7 +58,7 @@ export interface Trade {
   total_amount: number;
   ai_reasoning: string | null;
   ai_provider?: string;
-  executed_at: string;
+  executed_at?: string;
 }
 
 export interface BotConfig {

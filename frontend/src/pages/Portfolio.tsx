@@ -99,7 +99,7 @@ const Portfolio: React.FC = () => {
     const latestTradesByProvider = new Map<string, Trade>();
 
     // Sort oldest to newest so iteration maps the newest trades last
-    const sortedTrades = [...buyTrades].sort((a, b) => new Date(a.executed_at).getTime() - new Date(b.executed_at).getTime());
+    const sortedTrades = [...buyTrades].sort((a, b) => new Date(a.executed_at!).getTime() - new Date(b.executed_at!).getTime());
 
     sortedTrades.forEach(trade => {
       const provider = trade.ai_provider || 'OPENAI';
@@ -107,7 +107,7 @@ const Portfolio: React.FC = () => {
     });
 
     return Array.from(latestTradesByProvider.values())
-      .sort((a, b) => new Date(b.executed_at).getTime() - new Date(a.executed_at).getTime());
+      .sort((a, b) => new Date(b.executed_at!).getTime() - new Date(a.executed_at!).getTime());
   };
 
   const selectedTradeContext = useMemo(() => getReasoningForSymbol(selectedChartSymbol), [selectedChartSymbol, trades]);
@@ -311,11 +311,11 @@ const Portfolio: React.FC = () => {
                 ) : (
                   <Box>
                     {selectedTradeContext.map(trade => {
-                      const providerColor = trade.ai_provider === 'OPENAI' ? '#1976d2' : trade.ai_provider === 'GEMINI' ? '#9c27b0' : '#ed6c02';
+                      const providerColor = trade.ai_provider === 'OPENAI' ? '#1976d2' : trade.ai_provider === 'GEMINI' ? '#dc004e' : '#ed6c02';
                       return (
                         <Box key={trade.id} mb={3}>
                           <Typography variant="subtitle2" fontWeight="bold" sx={{ color: providerColor }} gutterBottom>
-                            {trade.ai_provider || 'OPENAI'} • Trade executed on {new Date(trade.executed_at).toLocaleDateString()}
+                            {trade.ai_provider || 'OPENAI'} • Trade executed on {new Date(trade.executed_at!).toLocaleDateString()}
                           </Typography>
                           <Box sx={{ bgcolor: 'rgba(255,255,255,0.05)', p: 2, borderRadius: 2, borderLeft: `4px solid ${providerColor}` }}>
                             <Typography variant="body2" sx={{ lineHeight: 1.6 }}>
