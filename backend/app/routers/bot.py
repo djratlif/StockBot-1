@@ -3,6 +3,11 @@ from sqlalchemy.orm import Session
 import logging
 from typing import Dict, List
 
+from app.auth import require_write_access
+from app.models.models import User
+import logging
+from typing import Dict, List
+
 from app.models.database import get_db
 from app.models.models import BotConfig
 from app.models.schemas import (
@@ -51,7 +56,8 @@ async def get_bot_config(db: Session = Depends(get_db)):
 @router.put("/config", response_model=BotConfigResponse)
 async def update_bot_config(
     config_update: BotConfigUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_write_access)
 ):
     """Update bot configuration"""
     try:
@@ -151,7 +157,10 @@ async def get_bot_status(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.post("/start", response_model=APIResponse)
-async def start_bot(db: Session = Depends(get_db)):
+async def start_bot(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_write_access)
+):
     """Start the trading bot with continuous trading"""
     try:
         config = db.query(BotConfig).first()
@@ -221,7 +230,10 @@ async def start_bot(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.post("/stop", response_model=APIResponse)
-async def stop_bot(db: Session = Depends(get_db)):
+async def stop_bot(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_write_access)
+):
     """Stop the trading bot and continuous trading"""
     try:
         config = db.query(BotConfig).first()
@@ -318,7 +330,11 @@ async def analyze_stock(symbol: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.post("/execute-trade/{symbol}")
-async def execute_ai_trade(symbol: str, db: Session = Depends(get_db)):
+async def execute_ai_trade(
+    symbol: str, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_write_access)
+):
     """Analyze and execute a trade for a specific stock"""
     try:
         symbol = symbol.upper()
@@ -415,7 +431,10 @@ async def get_market_sentiment():
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.post("/start-simple", response_model=APIResponse)
-async def start_bot_simple(db: Session = Depends(get_db)):
+async def start_bot_simple(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_write_access)
+):
     """Start the trading bot without continuous trading (for testing)"""
     try:
         config = db.query(BotConfig).first()
@@ -476,7 +495,8 @@ async def start_bot_simple(db: Session = Depends(get_db)):
 @router.post("/trading-interval", response_model=APIResponse)
 async def set_trading_interval(
     interval_config: TradingIntervalConfig,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_write_access)
 ):
     """Set the trading interval for continuous trading"""
     try:
@@ -534,7 +554,10 @@ async def get_trading_status():
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.post("/panic-sell", response_model=APIResponse)
-async def panic_sell(db: Session = Depends(get_db)):
+async def panic_sell(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_write_access)
+):
     """PANIC BUTTON: Stop the bot and liquidate all holdings immediately"""
     try:
         # 1. Stop the bot

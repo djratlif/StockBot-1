@@ -13,8 +13,11 @@ import {
 } from '@mui/material';
 import { tradesAPI, botAPI, portfolioAPI } from '../services/api';
 import type { Trade } from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 
 const Trading: React.FC = () => {
+  const { user } = useAuth();
+  const isReadOnly = user?.is_read_only || false;
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -99,6 +102,12 @@ const Trading: React.FC = () => {
         </style>
       </Box>
 
+      {isReadOnly && (
+        <Alert severity="info" sx={{ mb: 3 }}>
+          Read-Only Mode: You cannot execute trades manually.
+        </Alert>
+      )}
+
       {error && (
         <Alert severity="error" sx={{ mb: 3 }}>
           {error}
@@ -165,6 +174,7 @@ const Trading: React.FC = () => {
                           onClick={() => handleExecuteTrade(analysisResult.data.symbol)}
                           sx={{ mt: 2 }}
                           fullWidth
+                          disabled={isReadOnly}
                         >
                           Execute Trade
                         </Button>

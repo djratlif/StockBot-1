@@ -48,6 +48,16 @@ async def get_current_user(
             detail="Inactive user"
         )
         
+    # If the user is read-only and linked to a primary user, return the primary user
+    # but add a flag `is_read_only_session = True` to the user object
+    if getattr(user, 'is_read_only', False) and getattr(user, 'linked_user_id', None):
+        primary_user = auth_service.get_user_by_id(db, user_id=user.linked_user_id)
+        if primary_user:
+            primary_user.is_read_only_session = True
+            primary_user.is_read_only = True
+            return primary_user
+            
+    user.is_read_only_session = False
     return user
 
 
@@ -61,6 +71,20 @@ async def get_current_active_user(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Inactive user"
+        )
+    return current_user
+
+
+async def require_write_access(
+    current_user: User = Depends(get_current_active_user)
+) -> User:
+    """
+    Dependency to ensure the current session is not a read-only session
+    """
+    if getattr(current_user, 'is_read_only_session', False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Write access denied for read-only accounts"
         )
     return current_user
 
@@ -85,7 +109,18 @@ def get_optional_current_user(
             return None
             
         user = auth_service.get_user_by_id(db, user_id=int(user_id))
-        return user if user and user.is_active else None
+        if not user or not user.is_active:
+            return None
+            
+        if getattr(user, 'is_read_only', False) and getattr(user, 'linked_user_id', None):
+            primary_user = auth_service.get_user_by_id(db, user_id=user.linked_user_id)
+            if primary_user:
+                primary_user.is_read_only_session = True
+                primary_user.is_read_only = True
+                return primary_user
+                
+        user.is_read_only_session = False
+        return user
         
     except Exception:
         return None

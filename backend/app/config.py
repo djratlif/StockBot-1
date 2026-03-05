@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     
     # Authentication restrictions
     allowed_emails: Optional[str] = None  # Comma-separated list of allowed emails
+    read_only_emails: Optional[str] = None # Comma-separated list of read-only emails
+    primary_user_email: Optional[str] = None # Email of the primary user to link read-only accounts to
     
     # Bot Configuration
     initial_balance: float = 2000.00
@@ -62,6 +64,13 @@ class Settings(BaseSettings):
         if not self.allowed_emails:
             return []
         return [email.strip() for email in self.allowed_emails.split(',')]
+        
+    @property
+    def read_only_emails_list(self) -> list:
+        """Convert comma-separated read_only emails to list"""
+        if not self.read_only_emails:
+            return []
+        return [email.strip() for email in self.read_only_emails.split(',')]
     
     class Config:
         env_file = ".env"

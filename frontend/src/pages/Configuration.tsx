@@ -21,8 +21,11 @@ import {
 import { PlayArrow, Stop, Warning, Settings, Security, AccessTime } from '@mui/icons-material';
 import { botAPI, portfolioAPI } from '../services/api';
 import type { BotConfig, BotStatus, PortfolioSummary } from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 
 const Configuration: React.FC = () => {
+  const { user } = useAuth();
+  const isReadOnly = user?.is_read_only || false;
   const [config, setConfig] = useState<BotConfig | null>(null);
   const [botStatus, setBotStatus] = useState<BotStatus | null>(null);
   const [portfolioSummary, setPortfolioSummary] = useState<PortfolioSummary | null>(null);
@@ -116,7 +119,7 @@ const Configuration: React.FC = () => {
   return (
     <Box sx={{ pb: 6 }}>
       {/* Page Header */}
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={4}>
+      <Box display="flex" flexDirection={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }} gap={2} mb={4}>
         <Box>
           <Typography variant="h4" fontWeight="bold" gutterBottom>
             Bot Configuration
@@ -125,13 +128,13 @@ const Configuration: React.FC = () => {
             Manage your AI assistant's trading strategy, boundaries, and risk management parameters.
           </Typography>
         </Box>
-        <Box display="flex" alignItems="center" gap={2}>
+        <Box display="flex" flexDirection={{ xs: 'column', sm: 'row' }} alignItems="stretch" gap={2} width={{ xs: '100%', md: 'auto' }}>
           <Chip
             icon={botStatus?.is_active ? <PlayArrow /> : <Stop />}
             label={botStatus?.is_active ? 'Bot Active' : 'Bot Inactive'}
             color={botStatus?.is_active ? 'success' : 'default'}
             variant={botStatus?.is_active ? 'filled' : 'outlined'}
-            sx={{ fontWeight: 'bold', px: 1 }}
+            sx={{ fontWeight: 'bold', px: 1, height: { xs: 48, sm: 32 }, fontSize: { xs: '1rem', sm: '0.8125rem' } }}
           />
           <Button
             variant="contained"
@@ -139,12 +142,19 @@ const Configuration: React.FC = () => {
             startIcon={botStatus?.is_active ? <Stop /> : <PlayArrow />}
             onClick={handleBotToggle}
             disableElevation
-            sx={{ fontWeight: 'bold' }}
+            disabled={isReadOnly}
+            sx={{ fontWeight: 'bold', py: { xs: 1.5, sm: 1 } }}
           >
             {botStatus?.is_active ? 'Stop Trading' : 'Start Trading'}
           </Button>
         </Box>
       </Box>
+
+      {isReadOnly && (
+        <Alert severity="info" sx={{ mb: 3 }}>
+          Read-Only Mode: You are viewing this configuration but cannot make changes.
+        </Alert>
+      )}
 
       {error && (
         <Alert severity="error" sx={{ mb: 3 }}>
@@ -273,7 +283,7 @@ const Configuration: React.FC = () => {
                     <Button
                       variant="contained"
                       color="primary"
-                      disabled={savingSections['ai']}
+                      disabled={savingSections['ai'] || isReadOnly}
                       onClick={() => handleSaveSection('ai', ['openai_active', 'openai_allocation', 'gemini_active', 'gemini_allocation', 'anthropic_active', 'anthropic_allocation'])}
                       startIcon={savingSections['ai'] ? <CircularProgress size={20} /> : undefined}
                     >
@@ -364,7 +374,7 @@ const Configuration: React.FC = () => {
                     <Button
                       variant="contained"
                       color="primary"
-                      disabled={savingSections['strategy']}
+                      disabled={savingSections['strategy'] || isReadOnly}
                       onClick={() => handleSaveSection('strategy', ['strategy_profile', 'risk_tolerance', 'max_daily_trades', 'min_cash_reserve'])}
                       startIcon={savingSections['strategy'] ? <CircularProgress size={20} /> : undefined}
                     >
@@ -418,7 +428,7 @@ const Configuration: React.FC = () => {
                     <Button
                       variant="contained"
                       color="primary"
-                      disabled={savingSections['schedule']}
+                      disabled={savingSections['schedule'] || isReadOnly}
                       onClick={() => handleSaveSection('schedule', ['trading_hours_start', 'trading_hours_end'])}
                       startIcon={savingSections['schedule'] ? <CircularProgress size={20} /> : undefined}
                     >
@@ -518,7 +528,7 @@ const Configuration: React.FC = () => {
                 <Button
                   variant="contained"
                   color="primary"
-                  disabled={savingSections['limits']}
+                  disabled={savingSections['limits'] || isReadOnly}
                   onClick={() => handleSaveSection('limits', ['max_position_size', 'take_profit_percentage', 'stop_loss_percentage'])}
                   startIcon={savingSections['limits'] ? <CircularProgress size={20} /> : undefined}
                 >
@@ -544,7 +554,7 @@ const Configuration: React.FC = () => {
               <Button
                 variant="contained"
                 startIcon={<Warning />}
-                disabled={!botStatus?.is_active}
+                disabled={!botStatus?.is_active || isReadOnly}
                 onClick={async () => {
                   if (window.confirm("ARE YOU SURE? This will stop the bot and SELL ALL HOLDINGS immediately!")) {
                     try {

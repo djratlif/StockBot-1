@@ -8,6 +8,7 @@ interface User {
   picture?: string;
   google_id: string;
   is_active: boolean;
+  is_read_only: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -79,7 +80,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       });
 
       const { access_token, user: userData } = response.data;
-      
+
       setToken(access_token);
       setUser(userData);
       localStorage.setItem('token', access_token);
@@ -106,7 +107,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       });
 
       const { access_token, user: userData } = response.data;
-      
+
       setToken(access_token);
       setUser(userData);
       localStorage.setItem('token', access_token);
@@ -144,7 +145,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           Authorization: `Bearer ${token}`
         }
       });
-      
+
       setUser(response.data);
     } catch (error) {
       console.error('Auth check failed:', error);

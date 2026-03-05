@@ -20,6 +20,7 @@ import type { BotConfig } from '../services/api';
 
 const Account: React.FC = () => {
     const { user } = useAuth();
+    const isReadOnly = user?.is_read_only || false;
     const [config, setConfig] = useState<BotConfig | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -79,6 +80,12 @@ const Account: React.FC = () => {
             <Typography variant="body2" color="textSecondary" mb={4}>
                 Manage your user profile and active trading API keys securely.
             </Typography>
+
+            {isReadOnly && (
+                <Alert severity="info" sx={{ mb: 3 }}>
+                    Read-Only Mode: You cannot modify account settings.
+                </Alert>
+            )}
 
             {error && (
                 <Alert severity="error" sx={{ mb: 3 }}>
@@ -180,7 +187,7 @@ const Account: React.FC = () => {
                             color="primary"
                             startIcon={<Save />}
                             onClick={() => handleSaveSection('API Keys')}
-                            disabled={saving}
+                            disabled={saving || isReadOnly}
                         >
                             {saving ? 'Saving...' : 'Save API Keys'}
                         </Button>
@@ -238,7 +245,7 @@ const Account: React.FC = () => {
                             color="primary"
                             startIcon={<Save />}
                             onClick={() => handleSaveSection('Email Settings')}
-                            disabled={saving}
+                            disabled={saving || isReadOnly}
                         >
                             {saving ? 'Saving...' : 'Save Email Settings'}
                         </Button>

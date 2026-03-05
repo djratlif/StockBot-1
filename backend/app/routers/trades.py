@@ -1,6 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List
+
+from app.auth import require_write_access
+from app.models.models import User
+from typing import List
 import logging
 
 from app.models.database import get_db
@@ -74,51 +78,6 @@ async def get_trades_by_symbol(
         logger.error(f"Error getting trades for {symbol}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@router.get("/{trade_id}", response_model=TradeResponse)
-async def get_trade_by_id(trade_id: int, db: Session = Depends(get_db)):
-    """Get a specific trade by ID"""
-    try:
-        from app.models.models import Trades
-        
-        trade = db.query(Trades).filter(Trades.id == trade_id).first()
-        if not trade:
-            raise HTTPException(status_code=404, detail="Trade not found")
-        
-        return TradeResponse.from_orm(trade)
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting trade {trade_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-@router.delete("/{trade_id}", response_model=APIResponse)
-async def delete_trade(trade_id: int, db: Session = Depends(get_db)):
-    """Delete a trade (for testing purposes only)"""
-    try:
-        from app.models.models import Trades
-        
-        trade = db.query(Trades).filter(Trades.id == trade_id).first()
-        if not trade:
-            raise HTTPException(status_code=404, detail="Trade not found")
-        
-        # Note: In a real trading system, you wouldn't delete trades
-        # This is only for testing/development purposes
-        db.delete(trade)
-        db.commit()
-        
-        logger.warning(f"Trade {trade_id} deleted (testing only)")
-        return APIResponse(
-            success=True,
-            message=f"Trade {trade_id} deleted successfully",
-            data={"trade_id": trade_id}
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error deleting trade {trade_id}: {str(e)}")
-        db.rollback()
-        raise HTTPException(status_code=500, detail="Internal server error")
-
 @router.get("/stats/summary")
 async def get_trade_summary(db: Session = Depends(get_db)):
     """Get trading summary statistics"""
@@ -167,7 +126,7 @@ async def get_daily_report(db: Session = Depends(get_db)):
         return {
             "date": report_data["date"],
             "models": report_data["models"],
-            "trades": [TradeResponse.from_orm(t) for t in report_data["trades"]]
+            "trades": report_data["trades"]
         }
     except Exception as e:
         logger.error(f"Error generating daily report API response: {str(e)}")
@@ -208,4 +167,53 @@ async def get_daily_performance(db: Session = Depends(get_db)):
         }
     except Exception as e:
         logger.error(f"Error getting daily performance: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.get("/{trade_id}", response_model=TradeResponse)
+async def get_trade_by_id(trade_id: int, db: Session = Depends(get_db)):
+    """Get a specific trade by ID"""
+    try:
+        from app.models.models import Trades
+        
+        trade = db.query(Trades).filter(Trades.id == trade_id).first()
+        if not trade:
+            raise HTTPException(status_code=404, detail="Trade not found")
+        
+        return TradeResponse.from_orm(trade)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting trade {trade_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.delete("/{trade_id}", response_model=APIResponse)
+async def delete_trade(
+    trade_id: int, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_write_access)
+):
+    """Delete a trade (for testing purposes only)"""
+    try:
+        from app.models.models import Trades
+        
+        trade = db.query(Trades).filter(Trades.id == trade_id).first()
+        if not trade:
+            raise HTTPException(status_code=404, detail="Trade not found")
+        
+        # Note: In a real trading system, you wouldn't delete trades
+        # This is only for testing/development purposes
+        db.delete(trade)
+        db.commit()
+        
+        logger.warning(f"Trade {trade_id} deleted (testing only)")
+        return APIResponse(
+            success=True,
+            message=f"Trade {trade_id} deleted successfully",
+            data={"trade_id": trade_id}
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting trade {trade_id}: {str(e)}")
+        db.rollback()
         raise HTTPException(status_code=500, detail="Internal server error")

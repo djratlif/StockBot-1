@@ -208,10 +208,12 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
         chartRef.current.applyOptions({ width: chartContainerRef.current.clientWidth });
       }
     };
-    window.addEventListener('resize', handleResize);
+
+    const observer = new ResizeObserver(handleResize);
+    observer.observe(chartContainerRef.current);
 
     return () => {
-      window.removeEventListener('resize', handleResize);
+      observer.disconnect();
       if (chartRef.current) {
         chartRef.current.remove();
       }

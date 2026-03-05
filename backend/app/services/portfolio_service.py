@@ -559,20 +559,20 @@ class PortfolioService:
                             buy["qty"] -= qty
                             qty = 0
                     
-            exec_naive = trade.executed_at.replace(tzinfo=None) if trade.executed_at else None
-            # Compare naively to start of day naive since sqlite typically returns naive anyway or UTC
-            if exec_naive and exec_naive >= start_naive:
-                if p not in total_sells:
-                    total_sells[p] = 0
-                if p not in realized_pnls:
-                    realized_pnls[p] = 0.0
-                if p not in winning_sells:
-                    winning_sells[p] = 0
-                
-                realized_pnls[p] += profit
-                total_sells[p] += 1
-                if profit > 0:
-                    winning_sells[p] += 1
+                    exec_naive = trade.executed_at.replace(tzinfo=None) if trade.executed_at else None
+                    # Compare naively to start of day naive since sqlite typically returns naive anyway or UTC
+                    if exec_naive and exec_naive >= start_naive:
+                        if p not in total_sells:
+                            total_sells[p] = 0
+                        if p not in realized_pnls:
+                            realized_pnls[p] = 0.0
+                        if p not in winning_sells:
+                            winning_sells[p] = 0
+                        
+                        realized_pnls[p] += profit
+                        total_sells[p] += 1
+                        if profit > 0:
+                            winning_sells[p] += 1
             # --- END FIFO REALIZED PNL ---
                 
             for trade in todays_trades:

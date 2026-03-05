@@ -33,6 +33,8 @@ class User(Base):
     google_id = Column(String(255), unique=True, index=True, nullable=False)
     picture = Column(String(500), nullable=True)
     is_active = Column(Boolean, default=True)
+    is_read_only = Column(Boolean, default=False)
+    linked_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
@@ -41,6 +43,9 @@ class User(Base):
     holdings = relationship("Holdings", back_populates="user")
     trades = relationship("Trades", back_populates="user")
     bot_config = relationship("BotConfig", back_populates="user", uselist=False)
+    
+    # Self-referential relationship for linked users
+    linked_user = relationship("User", remote_side=[id], backref="read_only_accounts")
 
 class Portfolio(Base):
     __tablename__ = "portfolio"

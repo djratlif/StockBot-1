@@ -1,5 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from typing import List, Optional
+
+from app.auth import require_write_access
+from app.models.models import User
 from typing import List
 import logging
 
@@ -70,7 +74,10 @@ async def get_trading_stats(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.post("/initialize", response_model=APIResponse)
-async def initialize_portfolio(db: Session = Depends(get_db)):
+async def initialize_portfolio(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_write_access)
+):
     """Initialize portfolio with starting balance (for testing)"""
     try:
         portfolio = portfolio_service.initialize_portfolio(db)

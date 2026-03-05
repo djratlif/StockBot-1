@@ -1,5 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from typing import List, Optional, Dict, Any
+
+from app.auth import require_write_access
+from app.models.models import User
 from typing import List
 import logging
 from datetime import datetime, timedelta
@@ -46,10 +50,11 @@ async def get_activity_logs(
         logger.error(f"Error getting activity logs: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@router.post("/activity")
+@router.post("/activity", response_model=APIResponse)
 async def add_activity_log(
     log_data: dict,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_write_access)
 ):
     """Add a new activity log entry"""
     try:
@@ -131,10 +136,11 @@ async def add_trading_log(
         db.rollback()
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@router.delete("/activity")
+@router.delete("/activity", response_model=APIResponse)
 async def clear_activity_logs(
-    days: int = Query(default=7, ge=1, le=30, description="Clear logs older than N days"),
-    db: Session = Depends(get_db)
+    days: int = Query(7, description="Delete logs older than this many days"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_write_access)
 ):
     """Clear old activity logs"""
     try:

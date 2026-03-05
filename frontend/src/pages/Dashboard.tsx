@@ -40,10 +40,13 @@ import ActivityFeed from '../components/ActivityFeed';
 import AnimatedPrice from '../components/AnimatedPrice';
 import TimeTicker from '../components/TimeTicker';
 import { useWebSocket } from '../contexts/WebSocketContext';
+import { useAuth } from '../contexts/AuthContext';
 
 ChartJS.register(ArcElement, Tooltip, Legend);
 
 const Dashboard: React.FC = () => {
+  const { user } = useAuth();
+  const isReadOnly = user?.is_read_only || false;
   const theme = useTheme();
   const [portfolioSummary, setPortfolioSummary] = useState<PortfolioSummary | null>(null);
   const [botStatus, setBotStatus] = useState<BotStatus | null>(null);
@@ -204,6 +207,12 @@ const Dashboard: React.FC = () => {
     <Box>
 
 
+      {isReadOnly && (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          Read-Only Mode: View only. You cannot start/stop the bot or execute trades.
+        </Alert>
+      )}
+
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
           {error}
@@ -328,7 +337,7 @@ const Dashboard: React.FC = () => {
                     : (botStatus?.is_active ? <Stop /> : <PlayArrow />)
                 }
                 onClick={handleBotToggle}
-                disabled={toggling}
+                disabled={toggling || isReadOnly}
                 fullWidth
                 sx={{ mb: 1 }}
               >
@@ -361,7 +370,7 @@ const Dashboard: React.FC = () => {
                     }
                   }}
                   fullWidth
-                  disabled={isPanicSelling}
+                  disabled={isPanicSelling || isReadOnly}
                   sx={{ mb: 1, bgcolor: '#d32f2f', '&:hover': { bgcolor: '#b71c1c' } }}
                 >
                   {isPanicSelling ? 'SELLING ALL ASSETS...' : 'SELL ALL AND STOP BOT'}

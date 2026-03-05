@@ -32,7 +32,13 @@ class AuthService:
             
             # Check if email is in allowed list
             email = idinfo['email']
-            if settings.allowed_emails_list and email not in settings.allowed_emails_list:
+            is_allowed = False
+            if settings.allowed_emails_list and email in settings.allowed_emails_list:
+                is_allowed = True
+            elif settings.read_only_emails_list and email in settings.read_only_emails_list:
+                is_allowed = True
+                
+            if (settings.allowed_emails_list or settings.read_only_emails_list) and not is_allowed:
                 return None  # Email not in allowed list
                 
             return {
@@ -51,11 +57,11 @@ class AuthService:
         print(f"DEBUG: Allowed emails list: {settings.allowed_emails_list}")
         print(f"DEBUG: Raw allowed_emails setting: '{settings.allowed_emails}'")
         
-        if not settings.allowed_emails_list:
+        if not settings.allowed_emails_list and not settings.read_only_emails_list:
             print("DEBUG: No email restrictions, allowing all emails")
             return True  # If no restrictions, allow all emails
         
-        is_allowed = email in settings.allowed_emails_list
+        is_allowed = email in settings.allowed_emails_list or email in settings.read_only_emails_list
         print(f"DEBUG: Email '{email}' is allowed: {is_allowed}")
         return is_allowed
 
@@ -80,11 +86,24 @@ class AuthService:
         # Check if user exists
         user = db.query(User).filter(User.google_id == user_data['google_id']).first()
         
+        is_read_only = False
+        linked_user_id = None
+        
+        if settings.read_only_emails_list and user_data['email'] in settings.read_only_emails_list:
+            is_read_only = True
+            # Find the primary user to link to
+            if settings.primary_user_email:
+                primary_user = db.query(User).filter(User.email == settings.primary_user_email).first()
+                if primary_user:
+                    linked_user_id = primary_user.id
+        
         if user:
             # Update user info in case it changed
             user.email = user_data['email']
             user.name = user_data['name']
             user.picture = user_data['picture']
+            user.is_read_only = is_read_only
+            user.linked_user_id = linked_user_id
             user.updated_at = datetime.utcnow()
             db.commit()
             db.refresh(user)
@@ -95,29 +114,34 @@ class AuthService:
             google_id=user_data['google_id'],
             email=user_data['email'],
             name=user_data['name'],
-            picture=user_data['picture']
+            picture=user_data['picture'],
+            is_read_only=is_read_only,
+            linked_user_id=linked_user_id
         )
         db.add(user)
         db.commit()
         db.refresh(user)
         
-        # Create initial portfolio for new user
-        portfolio = Portfolio(
-            user_id=user.id,
-            cash_balance=settings.initial_balance,
-            total_value=settings.initial_balance
-        )
-        db.add(portfolio)
-        
-        # Create initial bot config for new user
-        bot_config = BotConfig(
-            user_id=user.id,
-            max_daily_trades=settings.default_max_daily_trades,
-            risk_tolerance=settings.default_risk_tolerance
-        )
-        db.add(bot_config)
-        
-        db.commit()
+        # Only create portfolio and bot config for primary users
+        if not is_read_only:
+            # Create initial portfolio for new user
+            portfolio = Portfolio(
+                user_id=user.id,
+                cash_balance=settings.initial_balance,
+                total_value=settings.initial_balance
+            )
+            db.add(portfolio)
+            
+            # Create initial bot config for new user
+            bot_config = BotConfig(
+                user_id=user.id,
+                max_daily_trades=settings.default_max_daily_trades,
+                risk_tolerance=settings.default_risk_tolerance
+            )
+            db.add(bot_config)
+            
+            db.commit()
+            
         return user
 
     def get_user_by_id(self, db: Session, user_id: int) -> Optional[User]:

@@ -29,6 +29,7 @@ class UserResponse(UserBase):
     id: int
     google_id: str
     is_active: bool
+    is_read_only: bool = False
     created_at: datetime
     updated_at: datetime
     

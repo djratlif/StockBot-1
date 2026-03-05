@@ -15,17 +15,153 @@ import {
   Chip,
   CircularProgress,
   Alert,
-  FormControl,
-  Select,
-  MenuItem,
-  InputLabel
+  Collapse,
+  IconButton
 } from '@mui/material';
-import { AccountBalance, TrendingUp, TrendingDown } from '@mui/icons-material';
+import { AccountBalance, TrendingUp, TrendingDown, KeyboardArrowDown, KeyboardArrowUp } from '@mui/icons-material';
 import { portfolioAPI, tradesAPI } from '../services/api';
 import type { PortfolioSummary, Holding, Trade } from '../services/api';
 import { useWebSocket } from '../contexts/WebSocketContext';
 import AnimatedPrice from '../components/AnimatedPrice';
 import HistoricalChart from '../components/HistoricalChart';
+
+const HoldingRow = ({ holding: h, trades }: { holding: Holding, trades: Trade[] }) => {
+  const [open, setOpen] = useState(false);
+  const isShort = h.quantity < 0;
+  const totalReturn = (h.current_price - h.average_cost) * h.quantity;
+  const initialInvestment = Math.abs(h.quantity) * h.average_cost;
+  const returnPercent = initialInvestment > 0 ? (totalReturn / initialInvestment) * 100 : 0;
+  const isPositive = totalReturn >= 0;
+  const totalValue = Math.abs(h.quantity) * h.current_price;
+
+  const reasoningContext = useMemo(() => {
+    const buyTrades = trades.filter(t => t.symbol === h.symbol && t.action === 'BUY');
+    if (buyTrades.length === 0) return [];
+
+    const latestTradesByProvider = new Map<string, Trade>();
+    const sortedTrades = [...buyTrades].sort((a, b) => new Date(a.executed_at!).getTime() - new Date(b.executed_at!).getTime());
+
+    sortedTrades.forEach(trade => {
+      const provider = trade.ai_provider || 'OPENAI';
+      latestTradesByProvider.set(provider, trade);
+    });
+
+    return Array.from(latestTradesByProvider.values())
+      .sort((a, b) => new Date(b.executed_at!).getTime() - new Date(a.executed_at!).getTime());
+  }, [h.symbol, trades]);
+
+  return (
+    <React.Fragment>
+      <TableRow hover sx={{ '& > *': { borderBottom: 'unset' } }}>
+        <TableCell>
+          <IconButton
+            aria-label="expand row"
+            size="small"
+            onClick={() => setOpen(!open)}
+          >
+            {open ? <KeyboardArrowUp /> : <KeyboardArrowDown />}
+          </IconButton>
+        </TableCell>
+        <TableCell>
+          <Chip
+            label={h.symbol}
+            color="primary"
+            variant="outlined"
+            size="small"
+            onClick={() => setOpen(!open)}
+            clickable
+            sx={{ fontWeight: 'bold' }}
+          />
+        </TableCell>
+        <TableCell align="right">
+          {Math.abs(h.quantity)} {isShort && <Typography component="span" variant="caption" color="error.main">(Short)</Typography>}
+        </TableCell>
+        <TableCell align="right">${h.average_cost.toFixed(2)}</TableCell>
+        <TableCell align="right">${h.current_price.toFixed(2)}</TableCell>
+        <TableCell align="right" sx={{ fontWeight: 'bold' }}>${totalValue.toFixed(2)}</TableCell>
+        <TableCell align="right">
+          <Typography
+            variant="body2"
+            color={isPositive ? 'success.main' : 'error.main'}
+            fontWeight="bold"
+          >
+            {isPositive ? '+' : ''}{totalReturn.toFixed(2)} ({isPositive ? '+' : ''}{returnPercent.toFixed(2)}%)
+          </Typography>
+        </TableCell>
+      </TableRow>
+      <TableRow>
+        <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={7}>
+          <Collapse in={open} timeout="auto" unmountOnExit>
+            <Box sx={{ margin: 2, mb: 4 }}>
+              <Typography variant="h6" gutterBottom component="div">
+                Market Intelligence
+              </Typography>
+              <Grid container spacing={3}>
+                {/* AI Reasoning Panel */}
+                <Grid item xs={12} md={4}>
+                  <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', bgcolor: 'rgba(255,255,255,0.02)' }}>
+                    <CardContent>
+                      <Typography variant="subtitle1" gutterBottom fontWeight="bold">
+                        AI Insight
+                      </Typography>
+                      {!reasoningContext || reasoningContext.length === 0 ? (
+                        <Typography variant="body2" color="textSecondary" sx={{ fontStyle: 'italic' }}>
+                          No AI reasoning found for {h.symbol} in recent trades.
+                        </Typography>
+                      ) : (
+                        <Box>
+                          {reasoningContext.map(trade => {
+                            const providerColor = trade.ai_provider === 'OPENAI' ? '#1976d2' : trade.ai_provider === 'GEMINI' ? '#dc004e' : '#ed6c02';
+                            return (
+                              <Box key={trade.id} mb={3}>
+                                <Typography variant="subtitle2" fontWeight="bold" sx={{ color: providerColor }} gutterBottom>
+                                  {trade.ai_provider || 'OPENAI'} • Executed {new Date(trade.executed_at!).toLocaleDateString()}
+                                </Typography>
+                                <Box sx={{ bgcolor: 'rgba(255,255,255,0.05)', p: 2, borderRadius: 2, borderLeft: `4px solid ${providerColor}` }}>
+                                  <Typography variant="body2" sx={{ lineHeight: 1.6 }}>
+                                    "{trade.ai_reasoning || "Algorithm initiated trade without explicit reasoning record."}"
+                                  </Typography>
+                                </Box>
+                                <Box mt={1}>
+                                  <Typography variant="caption" color="textSecondary">
+                                    <strong>Bought at:</strong> ${trade.price.toFixed(2)} | <strong>Qty:</strong> {trade.quantity}
+                                  </Typography>
+                                </Box>
+                              </Box>
+                            );
+                          })}
+                        </Box>
+                      )}
+                    </CardContent>
+                  </Card>
+                </Grid>
+
+                {/* Chart Panel */}
+                <Grid item xs={12} md={8}>
+                  <Card sx={{ height: '100%', bgcolor: 'rgba(255,255,255,0.02)' }}>
+                    <CardContent>
+                      <Typography variant="subtitle1" gutterBottom fontWeight="bold">
+                        Historical View
+                      </Typography>
+                      <Box sx={{ borderRadius: 1, overflow: 'hidden' }}>
+                        <HistoricalChart
+                          symbol={h.symbol}
+                          height={300}
+                          trades={trades}
+                          showToolbar={false}
+                        />
+                      </Box>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              </Grid>
+            </Box>
+          </Collapse>
+        </TableCell>
+      </TableRow>
+    </React.Fragment>
+  );
+};
 
 const Portfolio: React.FC = () => {
   const [portfolioSummary, setPortfolioSummary] = useState<PortfolioSummary | null>(null);
@@ -34,7 +170,6 @@ const Portfolio: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
-  const [selectedChartSymbol, setSelectedChartSymbol] = useState<string>('');
 
   const { lastMessage, isConnected } = useWebSocket();
 
@@ -44,7 +179,6 @@ const Portfolio: React.FC = () => {
       if (lastMessage.type === 'portfolio_update') {
         setPortfolioSummary(prev => {
           if (!prev) return prev;
-          // Calculate the change manually from the prev state or update directly if daily_change is provided by WS
           return {
             ...prev,
             cash_balance: lastMessage.payload.cash_balance,
@@ -72,10 +206,6 @@ const Portfolio: React.FC = () => {
       setHoldings(holdingsData);
       setTrades(tradesData);
       setLastUpdated(new Date());
-
-      if (!selectedChartSymbol && holdingsData && holdingsData.length > 0) {
-        setSelectedChartSymbol(holdingsData[0].symbol);
-      }
     } catch (err) {
       setError('Failed to load portfolio data');
       console.error('Portfolio error:', err);
@@ -90,27 +220,6 @@ const Portfolio: React.FC = () => {
     const interval = setInterval(fetchPortfolioData, 60000);
     return () => clearInterval(interval);
   }, []);
-
-  const getReasoningForSymbol = (symbol: string) => {
-    if (!symbol) return [];
-    const buyTrades = trades.filter(t => t.symbol === symbol && t.action === 'BUY');
-    if (buyTrades.length === 0) return [];
-
-    const latestTradesByProvider = new Map<string, Trade>();
-
-    // Sort oldest to newest so iteration maps the newest trades last
-    const sortedTrades = [...buyTrades].sort((a, b) => new Date(a.executed_at!).getTime() - new Date(b.executed_at!).getTime());
-
-    sortedTrades.forEach(trade => {
-      const provider = trade.ai_provider || 'OPENAI';
-      latestTradesByProvider.set(provider, trade);
-    });
-
-    return Array.from(latestTradesByProvider.values())
-      .sort((a, b) => new Date(b.executed_at!).getTime() - new Date(a.executed_at!).getTime());
-  };
-
-  const selectedTradeContext = useMemo(() => getReasoningForSymbol(selectedChartSymbol), [selectedChartSymbol, trades]);
 
   if (loading && !portfolioSummary) {
     return (
@@ -224,6 +333,7 @@ const Portfolio: React.FC = () => {
                 <Table>
                   <TableHead sx={{ bgcolor: 'rgba(255,255,255,0.02)' }}>
                     <TableRow>
+                      <TableCell width={50} />
                       <TableCell sx={{ fontWeight: 'bold' }}>Symbol</TableCell>
                       <TableCell align="right" sx={{ fontWeight: 'bold' }}>Qty</TableCell>
                       <TableCell align="right" sx={{ fontWeight: 'bold' }}>Avg Cost</TableCell>
@@ -233,52 +343,9 @@ const Portfolio: React.FC = () => {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {holdings.map((h) => {
-                      const isShort = h.quantity < 0;
-                      const totalReturn = (h.current_price - h.average_cost) * h.quantity;
-                      const initialInvestment = Math.abs(h.quantity) * h.average_cost;
-                      const returnPercent = initialInvestment > 0 ? (totalReturn / initialInvestment) * 100 : 0;
-                      const isPositive = totalReturn >= 0;
-                      const totalValue = Math.abs(h.quantity) * h.current_price;
-
-                      return (
-                        <TableRow
-                          key={h.id}
-                          hover
-                          onClick={() => setSelectedChartSymbol(h.symbol)}
-                          sx={{
-                            cursor: 'pointer',
-                            '&:hover': { bgcolor: 'rgba(25, 118, 210, 0.08)' },
-                            bgcolor: selectedChartSymbol === h.symbol ? 'rgba(25, 118, 210, 0.04)' : 'transparent'
-                          }}
-                        >
-                          <TableCell>
-                            <Chip
-                              label={h.symbol}
-                              color="primary"
-                              variant={selectedChartSymbol === h.symbol ? "filled" : "outlined"}
-                              size="small"
-                              sx={{ fontWeight: 'bold' }}
-                            />
-                          </TableCell>
-                          <TableCell align="right">
-                            {Math.abs(h.quantity)} {isShort && <Typography component="span" variant="caption" color="error.main">(Short)</Typography>}
-                          </TableCell>
-                          <TableCell align="right">${h.average_cost.toFixed(2)}</TableCell>
-                          <TableCell align="right">${h.current_price.toFixed(2)}</TableCell>
-                          <TableCell align="right" sx={{ fontWeight: 'bold' }}>${totalValue.toFixed(2)}</TableCell>
-                          <TableCell align="right">
-                            <Typography
-                              variant="body2"
-                              color={isPositive ? 'success.main' : 'error.main'}
-                              fontWeight="bold"
-                            >
-                              {isPositive ? '+' : ''}{totalReturn.toFixed(2)} ({isPositive ? '+' : ''}{returnPercent.toFixed(2)}%)
-                            </Typography>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
+                    {holdings.map((h) => (
+                      <HoldingRow key={h.id} holding={h} trades={trades} />
+                    ))}
                   </TableBody>
                 </Table>
               </TableContainer>
@@ -286,99 +353,6 @@ const Portfolio: React.FC = () => {
           </CardContent>
         </Card>
       </Box>
-
-      {/* Chart and AI Reasoning Section */}
-      <Box mb={3}>
-        <Typography variant="h5" gutterBottom fontWeight="bold">
-          Market Intelligence
-        </Typography>
-        <Grid container spacing={3}>
-          {/* AI Reasoning Panel */}
-          <Grid item xs={12} md={4}>
-            <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-              <CardContent>
-                <Typography variant="h6" gutterBottom>
-                  AI Insight
-                </Typography>
-                {!selectedChartSymbol ? (
-                  <Typography variant="body2" color="textSecondary" sx={{ fontStyle: 'italic' }}>
-                    Select a holding to view AI reasoning.
-                  </Typography>
-                ) : !selectedTradeContext || selectedTradeContext.length === 0 ? (
-                  <Typography variant="body2" color="textSecondary" sx={{ fontStyle: 'italic' }}>
-                    No AI reasoning found for {selectedChartSymbol} in recent trades.
-                  </Typography>
-                ) : (
-                  <Box>
-                    {selectedTradeContext.map(trade => {
-                      const providerColor = trade.ai_provider === 'OPENAI' ? '#1976d2' : trade.ai_provider === 'GEMINI' ? '#dc004e' : '#ed6c02';
-                      return (
-                        <Box key={trade.id} mb={3}>
-                          <Typography variant="subtitle2" fontWeight="bold" sx={{ color: providerColor }} gutterBottom>
-                            {trade.ai_provider || 'OPENAI'} • Trade executed on {new Date(trade.executed_at!).toLocaleDateString()}
-                          </Typography>
-                          <Box sx={{ bgcolor: 'rgba(255,255,255,0.05)', p: 2, borderRadius: 2, borderLeft: `4px solid ${providerColor}` }}>
-                            <Typography variant="body2" sx={{ lineHeight: 1.6 }}>
-                              "{trade.ai_reasoning || "Algorithm initiated trade without explicit reasoning record."}"
-                            </Typography>
-                          </Box>
-                          <Box mt={1}>
-                            <Typography variant="caption" color="textSecondary">
-                              <strong>Bought at:</strong> ${trade.price.toFixed(2)} | <strong>Quantity:</strong> {trade.quantity}
-                            </Typography>
-                          </Box>
-                        </Box>
-                      );
-                    })}
-                  </Box>
-                )}
-              </CardContent>
-            </Card>
-          </Grid>
-
-          {/* Chart Panel */}
-          <Grid item xs={12} md={8}>
-            <Card sx={{ height: '100%' }}>
-              <CardContent>
-                <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-                  <Typography variant="h6">
-                    Historical View
-                  </Typography>
-                  <FormControl size="small" sx={{ minWidth: 150 }}>
-                    <InputLabel id="chart-symbol-select-label">Holding</InputLabel>
-                    <Select
-                      labelId="chart-symbol-select-label"
-                      value={selectedChartSymbol}
-                      label="Holding"
-                      onChange={(e) => setSelectedChartSymbol(e.target.value)}
-                    >
-                      {holdings.length === 0 && <MenuItem value=""><em>None</em></MenuItem>}
-                      {holdings.map((h) => (
-                        <MenuItem key={h.symbol} value={h.symbol}>{h.symbol}</MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </Box>
-                <Box sx={{ borderRadius: 1, overflow: 'hidden' }}>
-                  {selectedChartSymbol ? (
-                    <HistoricalChart
-                      symbol={selectedChartSymbol}
-                      height={400}
-                      trades={trades}
-                      showToolbar={false}
-                    />
-                  ) : (
-                    <Box display="flex" justifyContent="center" alignItems="center" minHeight={400} sx={{ bgcolor: 'background.default', borderRadius: 1 }}>
-                      <Typography color="textSecondary">Portfolio is empty</Typography>
-                    </Box>
-                  )}
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
-        </Grid>
-      </Box>
-
     </Box>
   );
 };
