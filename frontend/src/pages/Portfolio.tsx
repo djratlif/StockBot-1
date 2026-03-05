@@ -16,55 +16,114 @@ import {
   CircularProgress,
   Alert,
   Collapse,
-  IconButton
+  IconButton,
+  Divider
 } from '@mui/material';
-import { AccountBalance, TrendingUp, TrendingDown, KeyboardArrowDown, KeyboardArrowUp } from '@mui/icons-material';
+import { AccountBalance, TrendingUp, TrendingDown, KeyboardArrowDown, KeyboardArrowUp, Psychology, ExpandMore, ExpandLess } from '@mui/icons-material';
 import { portfolioAPI, tradesAPI } from '../services/api';
 import type { PortfolioSummary, Holding, Trade } from '../services/api';
 import { useWebSocket } from '../contexts/WebSocketContext';
 import AnimatedPrice from '../components/AnimatedPrice';
 import HistoricalChart from '../components/HistoricalChart';
 
-const HoldingRow = ({ holding: h, trades }: { holding: Holding, trades: Trade[] }) => {
+/** Pill that expands inline to show one AI insight's full text */
+const InsightPill = ({ trade }: { trade: Trade }) => {
   const [open, setOpen] = useState(false);
-  const isShort = h.quantity < 0;
-  const totalReturn = (h.current_price - h.average_cost) * h.quantity;
-  const initialInvestment = Math.abs(h.quantity) * h.average_cost;
+  const providerColor =
+    trade.ai_provider === 'OPENAI' ? '#1976d2'
+      : trade.ai_provider === 'GEMINI' ? '#dc004e'
+        : '#ed6c02';
+
+  return (
+    <Box mb={1}>
+      <Box
+        onClick={() => setOpen(!open)}
+        sx={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 0.5,
+          cursor: 'pointer',
+          px: 1.5,
+          py: 0.5,
+          borderRadius: 2,
+          border: `1px solid ${providerColor}`,
+          bgcolor: `${providerColor}18`,
+          color: providerColor,
+          userSelect: 'none',
+          '&:hover': { bgcolor: `${providerColor}30` },
+          transition: 'background 0.2s'
+        }}
+      >
+        <Psychology sx={{ fontSize: 14 }} />
+        <Typography variant="caption" fontWeight="bold">
+          {trade.ai_provider || 'OPENAI'}
+        </Typography>
+        <Typography variant="caption" sx={{ opacity: 0.75 }}>
+          · {new Date(trade.executed_at!).toLocaleDateString()}
+        </Typography>
+        {open ? <ExpandLess sx={{ fontSize: 14 }} /> : <ExpandMore sx={{ fontSize: 14 }} />}
+      </Box>
+
+      <Collapse in={open} timeout="auto" unmountOnExit>
+        <Box
+          sx={{
+            mt: 0.75,
+            p: 1.5,
+            borderRadius: 2,
+            bgcolor: 'rgba(255,255,255,0.04)',
+            borderLeft: `3px solid ${providerColor}`
+          }}
+        >
+          <Typography variant="body2" sx={{ lineHeight: 1.6, mb: 0.5 }}>
+            "{trade.ai_reasoning || 'Algorithm initiated trade without explicit reasoning record.'}"
+          </Typography>
+          <Typography variant="caption" color="textSecondary">
+            <strong>Bought at:</strong> ${trade.price.toFixed(2)} &nbsp;|&nbsp; <strong>Qty:</strong> {trade.quantity}
+          </Typography>
+        </Box>
+      </Collapse>
+    </Box>
+  );
+};
+
+/** One row in the holdings table — holds merged quantity/cost across providers */
+const HoldingRow = ({ symbol, holdings, trades }: { symbol: string; holdings: Holding[]; trades: Trade[] }) => {
+  const [open, setOpen] = useState(false);
+
+  // Merge: sum quantity & weighted-average cost across all providers for this symbol
+  const totalQty = holdings.reduce((acc, h) => acc + h.quantity, 0);
+  const totalCost = holdings.reduce((acc, h) => acc + h.quantity * h.average_cost, 0);
+  const avgCost = totalQty !== 0 ? totalCost / totalQty : 0;
+  const currentPrice = holdings[0]?.current_price ?? 0;
+  const isShort = totalQty < 0;
+  const totalValue = Math.abs(totalQty) * currentPrice;
+  const totalReturn = (currentPrice - avgCost) * totalQty;
+  const initialInvestment = Math.abs(totalQty) * avgCost;
   const returnPercent = initialInvestment > 0 ? (totalReturn / initialInvestment) * 100 : 0;
   const isPositive = totalReturn >= 0;
-  const totalValue = Math.abs(h.quantity) * h.current_price;
 
-  const reasoningContext = useMemo(() => {
-    const buyTrades = trades.filter(t => t.symbol === h.symbol && t.action === 'BUY');
-    if (buyTrades.length === 0) return [];
-
-    const latestTradesByProvider = new Map<string, Trade>();
-    const sortedTrades = [...buyTrades].sort((a, b) => new Date(a.executed_at!).getTime() - new Date(b.executed_at!).getTime());
-
-    sortedTrades.forEach(trade => {
-      const provider = trade.ai_provider || 'OPENAI';
-      latestTradesByProvider.set(provider, trade);
-    });
-
-    return Array.from(latestTradesByProvider.values())
+  // Latest BUY trade per provider for insights
+  const insightTrades = useMemo(() => {
+    const buyTrades = trades.filter(t => t.symbol === symbol && t.action === 'BUY');
+    const latestByProvider = new Map<string, Trade>();
+    [...buyTrades]
+      .sort((a, b) => new Date(a.executed_at!).getTime() - new Date(b.executed_at!).getTime())
+      .forEach(t => latestByProvider.set(t.ai_provider || 'OPENAI', t));
+    return Array.from(latestByProvider.values())
       .sort((a, b) => new Date(b.executed_at!).getTime() - new Date(a.executed_at!).getTime());
-  }, [h.symbol, trades]);
+  }, [symbol, trades]);
 
   return (
     <React.Fragment>
       <TableRow hover sx={{ '& > *': { borderBottom: 'unset' } }}>
         <TableCell>
-          <IconButton
-            aria-label="expand row"
-            size="small"
-            onClick={() => setOpen(!open)}
-          >
+          <IconButton aria-label="expand row" size="small" onClick={() => setOpen(!open)}>
             {open ? <KeyboardArrowUp /> : <KeyboardArrowDown />}
           </IconButton>
         </TableCell>
         <TableCell>
           <Chip
-            label={h.symbol}
+            label={symbol}
             color="primary"
             variant="outlined"
             size="small"
@@ -74,21 +133,21 @@ const HoldingRow = ({ holding: h, trades }: { holding: Holding, trades: Trade[] 
           />
         </TableCell>
         <TableCell align="right">
-          {Math.abs(h.quantity)} {isShort && <Typography component="span" variant="caption" color="error.main">(Short)</Typography>}
+          {Math.abs(totalQty)}{isShort && (
+            <Typography component="span" variant="caption" color="error.main"> (Short)</Typography>
+          )}
         </TableCell>
-        <TableCell align="right">${h.average_cost.toFixed(2)}</TableCell>
-        <TableCell align="right">${h.current_price.toFixed(2)}</TableCell>
+        <TableCell align="right">${avgCost.toFixed(2)}</TableCell>
+        <TableCell align="right">${currentPrice.toFixed(2)}</TableCell>
         <TableCell align="right" sx={{ fontWeight: 'bold' }}>${totalValue.toFixed(2)}</TableCell>
         <TableCell align="right">
-          <Typography
-            variant="body2"
-            color={isPositive ? 'success.main' : 'error.main'}
-            fontWeight="bold"
-          >
+          <Typography variant="body2" color={isPositive ? 'success.main' : 'error.main'} fontWeight="bold">
             {isPositive ? '+' : ''}{totalReturn.toFixed(2)} ({isPositive ? '+' : ''}{returnPercent.toFixed(2)}%)
           </Typography>
         </TableCell>
       </TableRow>
+
+      {/* Expanded detail row */}
       <TableRow>
         <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={7}>
           <Collapse in={open} timeout="auto" unmountOnExit>
@@ -97,40 +156,44 @@ const HoldingRow = ({ holding: h, trades }: { holding: Holding, trades: Trade[] 
                 Market Intelligence
               </Typography>
               <Grid container spacing={3}>
-                {/* AI Reasoning Panel */}
+                {/* AI Insights Panel */}
                 <Grid item xs={12} md={4}>
                   <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', bgcolor: 'rgba(255,255,255,0.02)' }}>
                     <CardContent>
                       <Typography variant="subtitle1" gutterBottom fontWeight="bold">
-                        AI Insight
+                        AI Insights
                       </Typography>
-                      {!reasoningContext || reasoningContext.length === 0 ? (
+
+                      {insightTrades.length === 0 ? (
                         <Typography variant="body2" color="textSecondary" sx={{ fontStyle: 'italic' }}>
-                          No AI reasoning found for {h.symbol} in recent trades.
+                          No AI reasoning found for {symbol} in recent trades.
                         </Typography>
                       ) : (
                         <Box>
-                          {reasoningContext.map(trade => {
-                            const providerColor = trade.ai_provider === 'OPENAI' ? '#1976d2' : trade.ai_provider === 'GEMINI' ? '#dc004e' : '#ed6c02';
-                            return (
-                              <Box key={trade.id} mb={3}>
-                                <Typography variant="subtitle2" fontWeight="bold" sx={{ color: providerColor }} gutterBottom>
-                                  {trade.ai_provider || 'OPENAI'} • Executed {new Date(trade.executed_at!).toLocaleDateString()}
-                                </Typography>
-                                <Box sx={{ bgcolor: 'rgba(255,255,255,0.05)', p: 2, borderRadius: 2, borderLeft: `4px solid ${providerColor}` }}>
-                                  <Typography variant="body2" sx={{ lineHeight: 1.6 }}>
-                                    "{trade.ai_reasoning || "Algorithm initiated trade without explicit reasoning record."}"
-                                  </Typography>
-                                </Box>
-                                <Box mt={1}>
-                                  <Typography variant="caption" color="textSecondary">
-                                    <strong>Bought at:</strong> ${trade.price.toFixed(2)} | <strong>Qty:</strong> {trade.quantity}
-                                  </Typography>
-                                </Box>
-                              </Box>
-                            );
-                          })}
+                          {insightTrades.map(trade => (
+                            <InsightPill key={trade.id} trade={trade} />
+                          ))}
                         </Box>
+                      )}
+
+                      {/* Per-provider position breakdown if multiple */}
+                      {holdings.length > 1 && (
+                        <>
+                          <Divider sx={{ my: 1.5, opacity: 0.2 }} />
+                          <Typography variant="caption" color="textSecondary" display="block" mb={0.5}>
+                            Position breakdown
+                          </Typography>
+                          {holdings.map(h => (
+                            <Box key={h.id} display="flex" justifyContent="space-between" mb={0.25}>
+                              <Typography variant="caption" color="textSecondary">
+                                {h.ai_provider || 'OPENAI'}
+                              </Typography>
+                              <Typography variant="caption">
+                                {h.quantity} @ ${h.average_cost.toFixed(2)}
+                              </Typography>
+                            </Box>
+                          ))}
+                        </>
                       )}
                     </CardContent>
                   </Card>
@@ -145,7 +208,7 @@ const HoldingRow = ({ holding: h, trades }: { holding: Holding, trades: Trade[] 
                       </Typography>
                       <Box sx={{ borderRadius: 1, overflow: 'hidden' }}>
                         <HistoricalChart
-                          symbol={h.symbol}
+                          symbol={symbol}
                           height={300}
                           trades={trades}
                           showToolbar={false}
@@ -171,9 +234,8 @@ const Portfolio: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
 
-  const { lastMessage, isConnected } = useWebSocket();
+  const { lastMessage } = useWebSocket();
 
-  // Listen for WebSocket updates
   useEffect(() => {
     if (lastMessage) {
       if (lastMessage.type === 'portfolio_update') {
@@ -216,10 +278,19 @@ const Portfolio: React.FC = () => {
 
   useEffect(() => {
     fetchPortfolioData();
-    // Refresh data every minute (60000ms)
     const interval = setInterval(fetchPortfolioData, 60000);
     return () => clearInterval(interval);
   }, []);
+
+  // Group holdings by symbol so each symbol appears only once
+  const holdingsBySymbol = useMemo(() => {
+    const map = new Map<string, Holding[]>();
+    holdings.forEach(h => {
+      if (!map.has(h.symbol)) map.set(h.symbol, []);
+      map.get(h.symbol)!.push(h);
+    });
+    return Array.from(map.entries()); // [ [symbol, Holding[]], ... ]
+  }, [holdings]);
 
   if (loading && !portfolioSummary) {
     return (
@@ -322,7 +393,7 @@ const Portfolio: React.FC = () => {
               </Typography>
             </Box>
 
-            {holdings.length === 0 ? (
+            {holdingsBySymbol.length === 0 ? (
               <Box textAlign="center" py={6}>
                 <Typography variant="body1" color="textSecondary">
                   No holdings found. The bot hasn't made any purchases yet.
@@ -343,8 +414,13 @@ const Portfolio: React.FC = () => {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {holdings.map((h) => (
-                      <HoldingRow key={h.id} holding={h} trades={trades} />
+                    {holdingsBySymbol.map(([symbol, symbolHoldings]) => (
+                      <HoldingRow
+                        key={symbol}
+                        symbol={symbol}
+                        holdings={symbolHoldings}
+                        trades={trades}
+                      />
                     ))}
                   </TableBody>
                 </Table>
