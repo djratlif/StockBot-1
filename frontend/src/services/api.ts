@@ -172,6 +172,18 @@ export interface DailyReport {
   trades: Trade[];
 }
 
+export interface IntradayPerformancePoint {
+  time: string; // "HH:MM:SS"
+  cumulative_pnl: number;
+}
+
+export interface IntradayPerformance {
+  date: string;
+  providers: Record<string, IntradayPerformancePoint[]>;
+  unrealized_pnl: Record<string, number>;
+  now_time: string;
+}
+
 // Portfolio API
 export const portfolioAPI = {
   getPortfolio: (): Promise<Portfolio> =>
@@ -266,6 +278,10 @@ export const tradesAPI = {
 
   getDailyPerformance: (): Promise<any> =>
     api.get('/api/trades/performance/daily').then(res => res.data),
+
+  getIntradayPerformance: (): Promise<IntradayPerformance> =>
+    api.get('/api/trades/performance/intraday').then(res => res.data),
+
 };
 
 // Logs API

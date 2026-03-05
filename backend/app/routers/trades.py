@@ -132,6 +132,103 @@ async def get_daily_report(db: Session = Depends(get_db)):
         logger.error(f"Error generating daily report API response: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
+@router.get("/performance/intraday")
+async def get_intraday_performance(db: Session = Depends(get_db)):
+    """Get intraday cumulative realized P&L per AI model (sell trades only, FIFO matched).
+    Also returns current unrealized P&L per provider for the Total P&L tab."""
+    try:
+        from app.models.models import Trades, TradeAction, Holdings
+        from datetime import date, datetime
+
+        today = date.today()
+        start_of_day = datetime.combine(today, datetime.min.time())
+        start_naive = start_of_day.replace(tzinfo=None)
+        now_time = datetime.now().strftime("%H:%M:%S")
+
+        # All historical trades (chronological) for FIFO matching
+        all_trades = db.query(Trades).order_by(Trades.executed_at.asc()).all()
+
+        providers = ["OPENAI", "GEMINI", "ANTHROPIC"]
+
+        # Per-provider FIFO buy queues (symbol -> list of {qty, price})
+        queues = {p: {} for p in providers}
+        # Per-provider time-series: list of {time, cumulative_pnl}
+        series = {p: [] for p in providers}
+        cumulative = {p: 0.0 for p in providers}
+
+        for trade in all_trades:
+            p = trade.ai_provider or "OPENAI"
+            if p not in queues:
+                queues[p] = {}
+                series[p] = []
+                cumulative[p] = 0.0
+
+            sym = trade.symbol
+            if sym not in queues[p]:
+                queues[p][sym] = []
+
+            if trade.action == TradeAction.BUY:
+                queues[p][sym].append({"qty": trade.quantity, "price": trade.price})
+
+            elif trade.action == TradeAction.SELL:
+                qty = trade.quantity
+                profit = 0.0
+                q = queues[p][sym]
+                while qty > 0 and q:
+                    buy = q[0]
+                    if buy["qty"] <= qty:
+                        profit += (trade.price - buy["price"]) * buy["qty"]
+                        qty -= buy["qty"]
+                        q.pop(0)
+                    else:
+                        profit += (trade.price - buy["price"]) * qty
+                        buy["qty"] -= qty
+                        qty = 0
+
+                # Only add to intraday series if this sell happened today
+                exec_naive = trade.executed_at.replace(tzinfo=None) if trade.executed_at else None
+                if exec_naive and exec_naive >= start_naive:
+                    cumulative[p] += profit
+                    series[p].append({
+                        "time": exec_naive.strftime("%H:%M:%S"),
+                        "cumulative_pnl": round(cumulative[p], 2)
+                    })
+
+        # Compute current unrealized P&L per provider from live holdings
+        holdings = db.query(Holdings).all()
+        unrealized = {p: 0.0 for p in providers}
+        for h in holdings:
+            p = h.ai_provider or "OPENAI"
+            if p not in unrealized:
+                unrealized[p] = 0.0
+            # (current_price - avg_cost) * quantity (handles short positions too)
+            unrealized[p] += (h.current_price - h.average_cost) * h.quantity
+
+        # Always include a $0 anchor point at market open (09:30) so graph starts at zero
+        anchor = {"time": "09:30:00", "cumulative_pnl": 0.0}
+        result = {}
+        for p in set(list(providers) + list(series.keys())):
+            pts = series.get(p, [])
+            if pts:
+                if pts[0]["time"] > "09:30:00":
+                    pts = [anchor] + pts
+            else:
+                pts = [anchor]
+            result[p] = pts
+
+        return {
+            "date": today.strftime("%Y-%m-%d"),
+            "providers": result,
+            "unrealized_pnl": {p: round(v, 2) for p, v in unrealized.items()},
+            "now_time": now_time,
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting intraday performance: {str(e)}") 
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+
 @router.get("/performance/daily")
 async def get_daily_performance(db: Session = Depends(get_db)):
     """Get daily trading performance"""

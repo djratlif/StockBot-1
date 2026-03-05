@@ -669,5 +669,79 @@ class PortfolioService:
         """Check if we can make another trade today"""
         return True
 
+    def record_portfolio_snapshots(self, db: Session) -> None:
+        """Record a per-provider P&L snapshot. Called every 5 minutes by the background task."""
+        try:
+            from app.models.models import Trades, TradeAction, Holdings, PortfolioSnapshot
+            from datetime import date
+
+            today = date.today()
+            start_of_day = datetime.combine(today, datetime.min.time())
+            start_naive = start_of_day.replace(tzinfo=None)
+
+            # ── FIFO: compute realized P&L per provider ──────────────────────
+            all_trades = db.query(Trades).order_by(Trades.executed_at.asc()).all()
+            providers = ["OPENAI", "GEMINI", "ANTHROPIC"]
+            queues: Dict[str, Dict] = {p: {} for p in providers}
+            realized: Dict[str, float] = {p: 0.0 for p in providers}
+
+            for trade in all_trades:
+                p = trade.ai_provider or "OPENAI"
+                if p not in queues:
+                    queues[p] = {}
+                    realized[p] = 0.0
+                sym = trade.symbol
+                if sym not in queues[p]:
+                    queues[p][sym] = []
+
+                if trade.action == TradeAction.BUY:
+                    queues[p][sym].append({"qty": trade.quantity, "price": trade.price})
+                elif trade.action == TradeAction.SELL:
+                    qty = trade.quantity
+                    profit = 0.0
+                    q = queues[p][sym]
+                    while qty > 0 and q:
+                        buy = q[0]
+                        if buy["qty"] <= qty:
+                            profit += (trade.price - buy["price"]) * buy["qty"]
+                            qty -= buy["qty"]
+                            q.pop(0)
+                        else:
+                            profit += (trade.price - buy["price"]) * qty
+                            buy["qty"] -= qty
+                            qty = 0
+                    # Only count sells that happened today for the realized tally
+                    exec_naive = trade.executed_at.replace(tzinfo=None) if trade.executed_at else None
+                    if exec_naive and exec_naive >= start_naive:
+                        realized[p] += profit
+
+            # ── Unrealized P&L from live holdings ────────────────────────────
+            holdings = db.query(Holdings).all()
+            unrealized: Dict[str, float] = {p: 0.0 for p in providers}
+            for h in holdings:
+                p = h.ai_provider or "OPENAI"
+                if p not in unrealized:
+                    unrealized[p] = 0.0
+                unrealized[p] += (h.current_price - h.average_cost) * h.quantity
+
+            # ── Write snapshot rows ───────────────────────────────────────────
+            active_providers = set(list(realized.keys()) + list(unrealized.keys()))
+            for p in active_providers:
+                r = round(realized.get(p, 0.0), 4)
+                u = round(unrealized.get(p, 0.0), 4)
+                snap = PortfolioSnapshot(
+                    ai_provider=p,
+                    realized_pnl=r,
+                    unrealized_pnl=u,
+                    total_pnl=round(r + u, 4)
+                )
+                db.add(snap)
+            db.commit()
+            logger.info(f"Portfolio snapshots recorded for {len(active_providers)} providers")
+
+        except Exception as e:
+            logger.error(f"Error recording portfolio snapshots: {str(e)}")
+            db.rollback()
+
 # Global instance
 portfolio_service = PortfolioService()

@@ -2,6 +2,7 @@ from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import logging
+import asyncio
 from contextlib import asynccontextmanager
 
 from app.config import settings
@@ -19,14 +20,36 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+SNAPSHOT_INTERVAL_SECONDS = 5 * 60  # every 5 minutes
+
+async def _snapshot_loop():
+    """Background task: record per-provider P&L snapshots every 5 minutes."""
+    from app.models.database import SessionLocal
+    # Wait one interval before first snapshot so the app is fully up
+    await asyncio.sleep(SNAPSHOT_INTERVAL_SECONDS)
+    while True:
+        try:
+            db = SessionLocal()
+            try:
+                portfolio_service.record_portfolio_snapshots(db)
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Snapshot loop error: {e}")
+        await asyncio.sleep(SNAPSHOT_INTERVAL_SECONDS)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting StockBot API...")
 
-    # Create database tables
+    # Create database tables (including new portfolio_snapshots)
     Base.metadata.create_all(bind=engine)
     logger.info("Database tables created")
+
+    # Start portfolio snapshot background task
+    snapshot_task = asyncio.create_task(_snapshot_loop())
+    logger.info("Portfolio snapshot recorder started (every 5 minutes)")
 
     # Resume trading loop if bot was active before the server restarted
     try:
@@ -46,7 +69,9 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("Shutting down StockBot API...")
+    snapshot_task.cancel()
     await trading_bot_service.stop_continuous_trading()
+
 
 # Create FastAPI app
 app = FastAPI(

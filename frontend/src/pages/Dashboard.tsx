@@ -39,6 +39,7 @@ import type { PortfolioSummary, BotStatus, TradingStats, BotConfig, Holding } fr
 import ActivityFeed from '../components/ActivityFeed';
 import AnimatedPrice from '../components/AnimatedPrice';
 import TimeTicker from '../components/TimeTicker';
+import IntradayPerformanceChart from '../components/IntradayPerformanceChart';
 import { useWebSocket } from '../contexts/WebSocketContext';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -542,6 +543,22 @@ const Dashboard: React.FC = () => {
               <Typography variant="caption" display="block" sx={{ mt: 1, color: 'text.disabled' }}>
                 Last updated: {lastUpdated.toLocaleTimeString()}
               </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Intraday Model Performance Chart */}
+        <Grid item xs={12}>
+          <Card>
+            <CardContent>
+              <Box display="flex" alignItems="center" mb={1} gap={1}>
+                <ShowChart sx={{ color: 'primary.main' }} />
+                <Typography variant="h6">Intraday Realized Gains by Model</Typography>
+              </Box>
+              <Typography variant="caption" color="textSecondary" display="block" mb={2}>
+                Cumulative profit from completed sell trades only. Money in open positions is not counted until sold.
+              </Typography>
+              <IntradayPerformanceChart />
             </CardContent>
           </Card>
         </Grid>

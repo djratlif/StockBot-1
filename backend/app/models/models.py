@@ -159,3 +159,14 @@ class ActivityLog(Base):
     action = Column(String(50), nullable=False)  # BOT_STARTED, BOT_STOPPED, MARKET_CHECK, etc.
     details = Column(Text, nullable=False)
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
+
+class PortfolioSnapshot(Base):
+    """Periodic (every 5 min) snapshot of each AI model's P&L, used to draw the intraday Total P&L curve."""
+    __tablename__ = "portfolio_snapshots"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    ai_provider = Column(String(50), nullable=False, index=True)
+    realized_pnl = Column(Float, nullable=False, default=0.0)   # cumulative realized from FIFO sells today
+    unrealized_pnl = Column(Float, nullable=False, default=0.0) # open positions: (current - avg) * qty
+    total_pnl = Column(Float, nullable=False, default=0.0)      # realized + unrealized
+    snapshot_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
