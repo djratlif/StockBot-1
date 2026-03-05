@@ -33,8 +33,7 @@ import {
   SensorsRounded, // Added SensorsRounded icon
   SensorsOffRounded, // Added SensorsOffRounded icon
 } from '@mui/icons-material';
-import { useNavigate, useLocation } from 'react-router-dom';
-import TimeTicker from './TimeTicker';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useWebSocket } from '../contexts/WebSocketContext'; // Added WebSocketContext import
 
@@ -128,49 +127,26 @@ const Navbar: React.FC = () => {
         <Typography
           variant="h6"
           component="div"
-          sx={{ mr: 3, cursor: 'pointer' }}
+          sx={{ flexGrow: 1, mr: 3, cursor: 'pointer' }}
           onClick={() => navigate('/')}
         >
           StockBot
         </Typography>
 
-        {/* Time and Market Status - Center */}
-        <Box sx={{ flexGrow: 1, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-          <TimeTicker />
-        </Box>
-
         {/* User Profile - Right aligned */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Tooltip title="Cash Trading - Coming Soon">
-            <Box sx={{ display: 'flex', alignItems: 'center', mr: 2, backgroundColor: 'rgba(255, 255, 255, 0.05)', padding: '4px 12px', borderRadius: '4px' }}>
-              <Typography variant="body2" sx={{ mr: 1, color: 'text.secondary', opacity: 0.7 }}>
-                Paper Trading
-              </Typography>
-              <Switch
-                checked={false}
-                disabled
-                size="small"
-                inputProps={{ 'aria-label': 'toggle cash trading' }}
-              />
-              <Typography variant="body2" sx={{ ml: 1, color: 'text.disabled' }}>
-                Cash Trading
-              </Typography>
-            </Box>
-          </Tooltip>
-
-          <Typography variant="body2" sx={{ display: { xs: 'none', sm: 'block' } }}>
-            {user?.name}
-          </Typography>
-          <Box sx={{ display: 'flex', alignItems: 'center', ml: 2, mr: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 1, sm: 2 } }}>
+          <Box sx={{ display: { xs: 'none', md: 'flex' }, alignItems: 'center', ml: 1, mr: 1 }}>
             <Chip
               icon={isConnected ? <SensorsRounded fontSize="small" /> : <SensorsOffRounded fontSize="small" />}
               label={isConnected ? "Live Data" : "Connecting..."}
               color={isConnected ? "success" : "default"}
               variant="outlined"
               size="small"
-              sx={{ mr: 2 }}
             />
           </Box>
+          <Typography variant="body2" sx={{ display: { xs: 'none', sm: 'block' } }}>
+            {user?.name}
+          </Typography>
           <Avatar
             src={user?.picture}
             alt={user?.name}
@@ -191,6 +167,7 @@ const Navbar: React.FC = () => {
                 overflow: 'visible',
                 filter: 'drop-shadow(0px 2px 8px rgba(0,0,0,0.32))',
                 mt: 1.5,
+                minWidth: '200px',
                 '& .MuiAvatar-root': {
                   width: 32,
                   height: 32,
@@ -214,12 +191,29 @@ const Navbar: React.FC = () => {
             transformOrigin={{ horizontal: 'right', vertical: 'top' }}
             anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
           >
+            <Box sx={{ px: 2, py: 1 }}>
+              <Typography variant="body2" color="text.secondary" fontWeight="bold">Active Mode</Typography>
+              <Tooltip title="Cash Trading - Coming Soon">
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 1 }}>
+                  <Typography variant="body2" sx={{ color: 'text.primary' }}>
+                    Paper Trading
+                  </Typography>
+                  <Switch
+                    checked={false}
+                    disabled
+                    size="small"
+                    inputProps={{ 'aria-label': 'toggle cash trading' }}
+                  />
+                </Box>
+              </Tooltip>
+            </Box>
+            <Divider />
             <MenuItem onClick={handleProfileMenuClose}>
               <ListItemIcon>
                 <PersonIcon fontSize="small" />
               </ListItemIcon>
               <ListItemText>
-                <Typography variant="body2">{user?.email}</Typography>
+                <Typography variant="body2" noWrap>{user?.email}</Typography>
               </ListItemText>
             </MenuItem>
             <MenuItem onClick={() => {

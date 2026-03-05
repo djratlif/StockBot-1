@@ -1,6 +1,24 @@
 import axios from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:8000';
+const getApiBaseUrl = () => {
+  if (process.env.REACT_APP_API_BASE_URL) {
+    return process.env.REACT_APP_API_BASE_URL;
+  }
+  if (typeof window !== 'undefined' && window.location.hostname) {
+    const hostname = window.location.hostname;
+    // If it's a domain name (not localhost and not an IP address), rely on cloudflared's /api proxy
+    if (hostname !== 'localhost' && !/^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(hostname)) {
+      return '';
+    }
+    // For local network IPs, connect to port 8000 directly
+    if (hostname !== 'localhost') {
+      return `${window.location.protocol}//${hostname}:8000`;
+    }
+  }
+  return 'http://localhost:8000';
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 const api = axios.create({
   baseURL: API_BASE_URL,

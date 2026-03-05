@@ -25,7 +25,24 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
   const [lastMessage, setLastMessage] = useState<any>(null);
 
   useEffect(() => {
-    const wsUrl = process.env.REACT_APP_WS_URL || 'ws://localhost:8000/api/stream/ws';
+    const getWsUrl = () => {
+      if (process.env.REACT_APP_WS_URL) return process.env.REACT_APP_WS_URL;
+      if (typeof window !== 'undefined' && window.location.hostname) {
+        const hostname = window.location.hostname;
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        // If domain (not IP/localhost), use the current host which proxies through cloudflare
+        if (hostname !== 'localhost' && !/^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(hostname)) {
+          return `${protocol}//${window.location.host}/api/stream/ws`;
+        }
+        // If local IP, use port 8000
+        if (hostname !== 'localhost') {
+          return `${protocol}//${hostname}:8000/api/stream/ws`;
+        }
+      }
+      return 'ws://localhost:8000/api/stream/ws';
+    };
+
+    const wsUrl = getWsUrl();
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
@@ -37,14 +54,14 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
           ws.send('ping');
         }
       }, 30000);
-      
+
       ws.addEventListener('close', () => clearInterval(pingInterval));
     };
 
     ws.onmessage = (event) => {
       // Filter out pong keep-alives
       if (event.data === 'pong') return;
-      
+
       try {
         const data = JSON.parse(event.data);
         setLastMessage(data);

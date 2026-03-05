@@ -38,6 +38,7 @@ import { portfolioAPI, botAPI, tradesAPI } from '../services/api';
 import type { PortfolioSummary, BotStatus, TradingStats, BotConfig, Holding } from '../services/api';
 import ActivityFeed from '../components/ActivityFeed';
 import AnimatedPrice from '../components/AnimatedPrice';
+import TimeTicker from '../components/TimeTicker';
 import { useWebSocket } from '../contexts/WebSocketContext';
 
 ChartJS.register(ArcElement, Tooltip, Legend);
@@ -391,11 +392,14 @@ const Dashboard: React.FC = () => {
         <Grid item xs={12} md={12}>
           <Card>
             <CardContent>
-              <Box display="flex" alignItems="center" gap={2} mb={2} flexWrap="wrap">
-                <Typography variant="h6">
-                  Market Status
-                </Typography>
-                <Box display="flex" gap={1} alignItems="center">
+              <Box display="flex" flexDirection="column" gap={2} mb={2}>
+                <Box display="flex" justifyContent="space-between" alignItems="center" flexWrap="wrap">
+                  <Typography variant="h6">
+                    Market Status
+                  </Typography>
+                  <TimeTicker />
+                </Box>
+                <Box display="flex" gap={1} alignItems="center" flexWrap="wrap">
                   <Chip
                     label={`${portfolioSummary?.holdings_count || 0} Holdings`}
                     variant="outlined"
