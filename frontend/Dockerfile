@@ -1,4 +1,5 @@
-FROM node:18-alpine
+# Stage 1: Build the React application
+FROM node:18-alpine AS build
 
 WORKDIR /app
 
@@ -6,9 +7,18 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 
-# Copy source code
+# Copy source code and build
 COPY . .
+RUN npm run build
 
-# Build the app to ensure it compiles, then run development server
-EXPOSE 3000
-CMD ["npm", "start"]
+# Stage 2: Serve the app with Nginx
+FROM nginx:alpine
+
+# Copy the build output to replace the default nginx contents
+COPY --from=build /app/build /usr/share/nginx/html
+
+# Expose port 80 (default for Nginx)
+EXPOSE 80
+
+# Start Nginx
+CMD ["nginx", "-g", "daemon off;"]

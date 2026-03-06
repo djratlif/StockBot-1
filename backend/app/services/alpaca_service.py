@@ -5,6 +5,7 @@ import pandas as pd
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockLatestQuoteRequest, StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
+from alpaca.data.enums import DataFeed
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import MarketOrderRequest, GetOrdersRequest
 from alpaca.trading.enums import OrderSide, TimeInForce, OrderStatus
@@ -42,7 +43,7 @@ class AlpacaService:
                 return None
                 
             # Get latest quote and trades
-            request = StockLatestQuoteRequest(symbol_or_symbols=symbol)
+            request = StockLatestQuoteRequest(symbol_or_symbols=symbol, feed=DataFeed.IEX)
             quote = self.data_client.get_stock_latest_quote(request)
             
             if symbol not in quote:
@@ -59,7 +60,8 @@ class AlpacaService:
                 symbol_or_symbols=symbol,
                 timeframe=TimeFrame.Day,
                 start=yesterday,
-                limit=2 # Get last 2 to calculate change if needed, but last 1 is enough for close
+                limit=2, # Get last 2 to calculate change if needed, but last 1 is enough for close
+                feed=DataFeed.IEX
             )
             bars = self.data_client.get_stock_bars(bars_request)
             
@@ -98,7 +100,7 @@ class AlpacaService:
             if not self.data_client:
                 return None
                 
-            request = StockLatestQuoteRequest(symbol_or_symbols=symbol)
+            request = StockLatestQuoteRequest(symbol_or_symbols=symbol, feed=DataFeed.IEX)
             quote = self.data_client.get_stock_latest_quote(request)
             
             if symbol not in quote:
@@ -146,7 +148,8 @@ class AlpacaService:
                 symbol_or_symbols=symbol,
                 timeframe=timeframe,
                 start=start_time,
-                end=now
+                end=now,
+                feed=DataFeed.IEX
             )
             
             bars = self.data_client.get_stock_bars(request)

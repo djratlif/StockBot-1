@@ -9,8 +9,8 @@ redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 # Initialize Celery app
 celery_app = Celery(
     'stockbot_tasks',
-    broker='memory://',
-    backend='memory://',
+    broker=redis_url,
+    backend=redis_url,
     include=['app.tasks.trading_tasks']
 )
 

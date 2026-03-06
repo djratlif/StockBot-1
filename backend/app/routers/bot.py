@@ -56,8 +56,7 @@ async def get_bot_config(db: Session = Depends(get_db)):
 @router.put("/config", response_model=BotConfigResponse)
 async def update_bot_config(
     config_update: BotConfigUpdate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_write_access)
+    db: Session = Depends(get_db)
 ):
     """Update bot configuration"""
     try:
@@ -158,8 +157,7 @@ async def get_bot_status(db: Session = Depends(get_db)):
 
 @router.post("/start", response_model=APIResponse)
 async def start_bot(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_write_access)
+    db: Session = Depends(get_db)
 ):
     """Start the trading bot with continuous trading"""
     try:
@@ -231,8 +229,7 @@ async def start_bot(
 
 @router.post("/stop", response_model=APIResponse)
 async def stop_bot(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_write_access)
+    db: Session = Depends(get_db)
 ):
     """Stop the trading bot and continuous trading"""
     try:
@@ -332,8 +329,7 @@ async def analyze_stock(symbol: str, db: Session = Depends(get_db)):
 @router.post("/execute-trade/{symbol}")
 async def execute_ai_trade(
     symbol: str, 
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_write_access)
+    db: Session = Depends(get_db)
 ):
     """Analyze and execute a trade for a specific stock"""
     try:
@@ -432,8 +428,7 @@ async def get_market_sentiment():
 
 @router.post("/start-simple", response_model=APIResponse)
 async def start_bot_simple(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_write_access)
+    db: Session = Depends(get_db)
 ):
     """Start the trading bot without continuous trading (for testing)"""
     try:
@@ -495,8 +490,7 @@ async def start_bot_simple(
 @router.post("/trading-interval", response_model=APIResponse)
 async def set_trading_interval(
     interval_config: TradingIntervalConfig,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_write_access)
+    db: Session = Depends(get_db)
 ):
     """Set the trading interval for continuous trading"""
     try:
@@ -555,8 +549,7 @@ async def get_trading_status():
 
 @router.post("/panic-sell", response_model=APIResponse)
 async def panic_sell(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_write_access)
+    db: Session = Depends(get_db)
 ):
     """PANIC BUTTON: Stop the bot and liquidate all holdings immediately"""
     try:

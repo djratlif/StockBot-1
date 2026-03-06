@@ -20,7 +20,7 @@ services:
       - "6379:6379"
 
   backend:
-    build: 
+    build:
       context: ./backend
       dockerfile: Dockerfile
     restart: always
@@ -32,6 +32,8 @@ services:
       - ENVIRONMENT=development
       - DEBUG=true
       - PYTHONUNBUFFERED=1
+    env_file:
+      - ./backend/.env
     volumes:
       - ./backend:/app
     depends_on:
@@ -39,7 +41,7 @@ services:
       - redis
 
   celery_worker:
-    build: 
+    build:
       context: ./backend
       dockerfile: Dockerfile
     command: celery -A app.celery_app worker --loglevel=info
@@ -48,6 +50,8 @@ services:
       - DATABASE_URL=postgresql://stockbot:stockbotpassword@db:5432/stockbot_db
       - REDIS_URL=redis://redis:6379/0
       - ENVIRONMENT=development
+    env_file:
+      - ./backend/.env
     volumes:
       - ./backend:/app
     depends_on:
@@ -61,14 +65,21 @@ services:
       dockerfile: Dockerfile
     restart: always
     ports:
-      - "3000:3000"
+      - "3000:80"
     environment:
       - REACT_APP_API_BASE_URL=http://localhost:8000
-      - WATCHPACK_POLLING=true # Required for hot reload inside Docker volume on some OS
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
     depends_on:
+      - backend
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: always
+    command: tunnel run stockbot
+    volumes:
+      - ~/.cloudflared:/home/nonroot/.cloudflared
+      - ~/.cloudflared:/Users/drewratliff/.cloudflared
+    depends_on:
+      - frontend
       - backend
 
 volumes:
