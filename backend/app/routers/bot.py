@@ -3,10 +3,8 @@ from sqlalchemy.orm import Session
 import logging
 from typing import Dict, List
 
-from app.auth import require_write_access
+from app.auth import get_current_active_user, require_write_access
 from app.models.models import User
-import logging
-from typing import Dict, List
 
 from app.models.database import get_db
 from app.models.models import BotConfig
@@ -22,30 +20,34 @@ from app.services.trading_bot_service import trading_bot_service
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+
+def _get_or_create_config(db: Session) -> BotConfig:
+    """Return the existing BotConfig or create a default one."""
+    config = db.query(BotConfig).first()
+    if not config:
+        config = BotConfig(
+            max_daily_trades=5,
+            max_position_size=0.20,
+            risk_tolerance="MEDIUM",
+            is_active=False,
+            openai_active=True,
+            openai_allocation=1000.0,
+            gemini_active=False,
+            gemini_allocation=0.0,
+            anthropic_active=False,
+            anthropic_allocation=0.0,
+        )
+        db.add(config)
+        db.commit()
+        db.refresh(config)
+        logger.info("Created default bot configuration")
+    return config
+
 @router.get("/config", response_model=BotConfigResponse)
-async def get_bot_config(db: Session = Depends(get_db)):
+async def get_bot_config(db: Session = Depends(get_db), _: User = Depends(get_current_active_user)):
     """Get current bot configuration"""
     try:
-        config = db.query(BotConfig).first()
-        if not config:
-            # Create default configuration if none exists
-            config = BotConfig(
-                max_daily_trades=5,
-                max_position_size=0.20,
-                risk_tolerance="MEDIUM",
-                is_active=False,
-                openai_active=True,
-                openai_allocation=1000.0,
-                gemini_active=False,
-                gemini_allocation=0.0,
-                anthropic_active=False,
-                anthropic_allocation=0.0
-            )
-            db.add(config)
-            db.commit()
-            db.refresh(config)
-            logger.info("Created default bot configuration")
-        
+        config = _get_or_create_config(db)
         return BotConfigResponse.from_orm(config)
     except HTTPException:
         raise
@@ -56,7 +58,8 @@ async def get_bot_config(db: Session = Depends(get_db)):
 @router.put("/config", response_model=BotConfigResponse)
 async def update_bot_config(
     config_update: BotConfigUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: User = Depends(require_write_access)
 ):
     """Update bot configuration"""
     try:
@@ -81,28 +84,10 @@ async def update_bot_config(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/status", response_model=BotStatus)
-async def get_bot_status(db: Session = Depends(get_db)):
+async def get_bot_status(db: Session = Depends(get_db), _: User = Depends(get_current_active_user)):
     """Get current bot status and trading information"""
     try:
-        config = db.query(BotConfig).first()
-        if not config:
-            # Create default configuration if none exists
-            config = BotConfig(
-                max_daily_trades=5,
-                max_position_size=0.20,
-                risk_tolerance="MEDIUM",
-                is_active=False,
-                openai_active=True,
-                openai_allocation=1000.0,
-                gemini_active=False,
-                gemini_allocation=0.0,
-                anthropic_active=False,
-                anthropic_allocation=0.0
-            )
-            db.add(config)
-            db.commit()
-            db.refresh(config)
-            logger.info("Created default bot configuration")
+        config = _get_or_create_config(db)
         
         portfolio = portfolio_service.get_portfolio(db)
         if not portfolio:
@@ -157,30 +142,12 @@ async def get_bot_status(db: Session = Depends(get_db)):
 
 @router.post("/start", response_model=APIResponse)
 async def start_bot(
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: User = Depends(require_write_access)
 ):
     """Start the trading bot with continuous trading"""
     try:
-        config = db.query(BotConfig).first()
-        if not config:
-            # Create default configuration if none exists
-            config = BotConfig(
-                max_daily_trades=5,
-                max_position_size=0.20,
-                risk_tolerance="MEDIUM",
-                is_active=False,
-                openai_active=True,
-                openai_allocation=1000.0,
-                gemini_active=False,
-                gemini_allocation=0.0,
-                anthropic_active=False,
-                anthropic_allocation=0.0
-            )
-            db.add(config)
-            db.commit()
-            db.refresh(config)
-            logger.info("Created default bot configuration")
-        
+        config = _get_or_create_config(db)
         config.is_active = True
         db.commit()
         
@@ -229,7 +196,8 @@ async def start_bot(
 
 @router.post("/stop", response_model=APIResponse)
 async def stop_bot(
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: User = Depends(require_write_access)
 ):
     """Stop the trading bot and continuous trading"""
     try:
@@ -271,7 +239,7 @@ async def stop_bot(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.post("/analyze/{symbol}")
-async def analyze_stock(symbol: str, db: Session = Depends(get_db)):
+async def analyze_stock(symbol: str, db: Session = Depends(get_db), _: User = Depends(get_current_active_user)):
     """Analyze a specific stock using AI"""
     try:
         symbol = symbol.upper()
@@ -290,24 +258,26 @@ async def analyze_stock(symbol: str, db: Session = Depends(get_db)):
         current_holdings = portfolio_service.get_current_holdings_dict(db)
         
         # Analyze stock with AI
-        decision = ai_service.analyze_stock_for_trading(
+        decision = await ai_service.analyze_stock_for_trading(
             symbol=symbol,
             portfolio_cash=portfolio.cash_balance,
             current_holdings=current_holdings,
             portfolio_value=portfolio.total_value,
             risk_tolerance=config.risk_tolerance,
+            strategy_profile=getattr(config, 'strategy_profile', 'BALANCED'),
+            recent_news=[],
             max_position_size=config.max_position_size,
             ai_provider="OPENAI",
             api_key=config.openai_api_key
         )
-        
+
         if not decision:
             return APIResponse(
                 success=True,
                 message=f"AI recommends HOLD for {symbol}",
                 data={"symbol": symbol, "action": "HOLD", "reasoning": "No trading action recommended"}
             )
-        
+
         return APIResponse(
             success=True,
             message=f"AI analysis completed for {symbol}",
@@ -328,8 +298,9 @@ async def analyze_stock(symbol: str, db: Session = Depends(get_db)):
 
 @router.post("/execute-trade/{symbol}")
 async def execute_ai_trade(
-    symbol: str, 
-    db: Session = Depends(get_db)
+    symbol: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_write_access)
 ):
     """Analyze and execute a trade for a specific stock"""
     try:
@@ -361,17 +332,19 @@ async def execute_ai_trade(
         current_holdings = portfolio_service.get_current_holdings_dict(db)
         
         # Analyze stock with AI
-        decision = ai_service.analyze_stock_for_trading(
+        decision = await ai_service.analyze_stock_for_trading(
             symbol=symbol,
             portfolio_cash=portfolio.cash_balance,
             current_holdings=current_holdings,
             portfolio_value=portfolio.total_value,
             risk_tolerance=config.risk_tolerance,
+            strategy_profile=getattr(config, 'strategy_profile', 'BALANCED'),
+            recent_news=[],
             max_position_size=config.max_position_size,
             ai_provider="OPENAI",
             api_key=config.openai_api_key
         )
-        
+
         if not decision:
             return APIResponse(
                 success=True,
@@ -415,7 +388,7 @@ async def get_market_sentiment():
         # Get trending stocks for sentiment analysis
         trending_symbols = stock_service.get_trending_stocks()[:5]  # Top 5
         
-        sentiment = ai_service.get_market_sentiment(trending_symbols)
+        sentiment = await ai_service.get_market_sentiment(trending_symbols)
         
         return APIResponse(
             success=True,
@@ -428,30 +401,12 @@ async def get_market_sentiment():
 
 @router.post("/start-simple", response_model=APIResponse)
 async def start_bot_simple(
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: User = Depends(require_write_access)
 ):
     """Start the trading bot without continuous trading (for testing)"""
     try:
-        config = db.query(BotConfig).first()
-        if not config:
-            # Create default configuration if none exists
-            config = BotConfig(
-                max_daily_trades=5,
-                max_position_size=0.20,
-                risk_tolerance="MEDIUM",
-                is_active=False,
-                openai_active=True,
-                openai_allocation=1000.0,
-                gemini_active=False,
-                gemini_allocation=0.0,
-                anthropic_active=False,
-                anthropic_allocation=0.0
-            )
-            db.add(config)
-            db.commit()
-            db.refresh(config)
-            logger.info("Created default bot configuration")
-        
+        config = _get_or_create_config(db)
         config.is_active = True
         db.commit()
         
@@ -490,7 +445,8 @@ async def start_bot_simple(
 @router.post("/trading-interval", response_model=APIResponse)
 async def set_trading_interval(
     interval_config: TradingIntervalConfig,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: User = Depends(require_write_access)
 ):
     """Set the trading interval for continuous trading"""
     try:
@@ -549,7 +505,8 @@ async def get_trading_status():
 
 @router.post("/panic-sell", response_model=APIResponse)
 async def panic_sell(
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: User = Depends(require_write_access)
 ):
     """PANIC BUTTON: Stop the bot and liquidate all holdings immediately"""
     try:
@@ -601,7 +558,7 @@ async def panic_sell(
             if config:
                 config.is_active = False
                 db.commit()
-        except:
-            pass
+        except Exception as stop_err:
+            logger.error(f"Failed to force-stop bot after panic sell error: {stop_err}")
             
         raise HTTPException(status_code=500, detail=f"Panic sell failed: {str(e)}")

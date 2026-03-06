@@ -1,9 +1,11 @@
-from openai import OpenAI
-from typing import Dict, List, Optional
-import logging
+import asyncio
 import json
+import logging
 import re
 from datetime import datetime
+from typing import Dict, List, Optional
+
+from openai import OpenAI
 from app.config import settings
 from app.models.schemas import TradingDecision, StockInfo, TradeActionEnum, RiskToleranceEnum
 from app.services.stock_service import stock_service
@@ -83,9 +85,6 @@ class AITradingService:
                 allocation_overage=allocation_overage
             )
             
-            import asyncio
-            from openai import RateLimitError
-            
             async def _make_api_call(model, messages, max_tokens, temperature):
                 retries = 3
                 for i in range(retries):
@@ -139,7 +138,7 @@ class AITradingService:
                         elif ai_provider == "ANTHROPIC":
                             import anthropic
                             client = anthropic.Anthropic(api_key=api_key)
-                            model_name = "claude-3-haiku-20240307" if "mini" in model else "claude-sonnet-4-5-20250929"
+                            model_name = "claude-haiku-4-5-20251001" if "mini" in model else "claude-sonnet-4-5"
                             
                             system_instruction = ""
                             anthropic_messages = []
@@ -430,7 +429,7 @@ Consider:
             logger.error(f"Full AI Response was: {response}")
             return None
     
-    def get_market_sentiment(self, symbols: List[str]) -> Dict[str, str]:
+    async def get_market_sentiment(self, symbols: List[str]) -> Dict[str, str]:
         """Get overall market sentiment for a list of symbols"""
         try:
             if not symbols:
@@ -452,16 +451,19 @@ SYMBOL: SENTIMENT - Brief reason
 Keep each analysis to one line.
 """
             
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": "You are a market analyst providing quick sentiment analysis."},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=300,
-                temperature=0.5
-            )
-            
+            def _do_sentiment():
+                return self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": "You are a market analyst providing quick sentiment analysis."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    max_tokens=300,
+                    temperature=0.5
+                )
+
+            response = await asyncio.to_thread(_do_sentiment)
+
             # Parse the response
             sentiment_data = {}
             lines = response.choices[0].message.content.split('\n')

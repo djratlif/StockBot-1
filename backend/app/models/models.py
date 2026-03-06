@@ -52,8 +52,8 @@ class Portfolio(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    cash_balance = Column(Float, nullable=False, default=20.00)
-    total_value = Column(Float, nullable=False, default=20.00)
+    cash_balance = Column(Float, nullable=False, default=2000.00)
+    total_value = Column(Float, nullable=False, default=2000.00)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     

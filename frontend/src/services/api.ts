@@ -27,8 +27,12 @@ const api = axios.create({
   },
 });
 
-// Add cache busting for GET requests
+// Add auth token and cache busting to requests
 api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
   if (config.method === 'get') {
     config.params = { ...config.params, _t: Date.now() };
   }
@@ -77,6 +81,24 @@ export interface Trade {
   ai_reasoning: string | null;
   ai_provider?: string;
   executed_at?: string;
+}
+
+export interface SystemStatusError {
+  message: string;
+  provider: string;
+  timestamp: string;
+}
+
+export interface SystemStatus {
+  openai_api_configured: boolean;
+  gemini_api_configured: boolean;
+  anthropic_api_configured: boolean;
+  database_connected: boolean;
+  stock_service_available: boolean;
+  last_check: string;
+  recent_errors: SystemStatusError[];
+  stock_api_working?: boolean;
+  stock_api_error?: string;
 }
 
 export interface BotConfig {

@@ -284,7 +284,8 @@ class TradingBotService:
                             timestamp=datetime.now(self.est)
                         ))
                         db.commit()
-                    except: pass
+                    except Exception as log_err:
+                        logger.warning(f"Failed to log timeout for {symbol}: {log_err}")
                 elif error:
                     logger.warning(f"Error analyzing {symbol} with {provider_name}: {error}")
                 elif decision and decision.confidence >= 5:
@@ -299,8 +300,9 @@ class TradingBotService:
                             timestamp=datetime.now(self.est)
                         ))
                         db.commit()
-                    except: pass
-            
+                    except Exception as log_err:
+                        logger.warning(f"Failed to log low-confidence decision for {symbol}: {log_err}")
+
             # Sort decisions by confidence and execute the best ones
             trading_decisions.sort(key=lambda x: x.confidence, reverse=True)
             

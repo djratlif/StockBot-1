@@ -111,9 +111,10 @@ async def root():
 @app.get("/api/health")
 async def health_check():
     """Health check endpoint"""
+    from datetime import datetime
     return {
         "status": "healthy",
-        "timestamp": "2024-01-01T00:00:00Z"
+        "timestamp": datetime.utcnow().isoformat() + "Z"
     }
 
 @app.exception_handler(Exception)

@@ -1,7 +1,7 @@
 from app.celery_app import celery_app
 import asyncio
 from app.models.database import SessionLocal
-from app.models.models import BotConfig, ActivityLog, AllocationType
+from app.models.models import BotConfig
 import logging
 from datetime import datetime
 import pytz

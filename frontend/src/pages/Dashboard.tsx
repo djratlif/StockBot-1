@@ -35,7 +35,7 @@ import {
   Warning,
 } from '@mui/icons-material';
 import { portfolioAPI, botAPI, tradesAPI, logsAPI } from '../services/api';
-import type { PortfolioSummary, BotStatus, TradingStats, BotConfig, Holding } from '../services/api';
+import type { PortfolioSummary, BotStatus, TradingStats, BotConfig, Holding, SystemStatus } from '../services/api';
 import ActivityFeed from '../components/ActivityFeed';
 import AnimatedPrice from '../components/AnimatedPrice';
 import TimeTicker from '../components/TimeTicker';
@@ -53,7 +53,7 @@ const Dashboard: React.FC = () => {
   const [botStatus, setBotStatus] = useState<BotStatus | null>(null);
   const [tradingStats, setTradingStats] = useState<TradingStats | null>(null);
   const [botConfig, setBotConfig] = useState<BotConfig | null>(null);
-  const [systemStatus, setSystemStatus] = useState<any>(null);
+  const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState(false);
@@ -118,6 +118,21 @@ const Dashboard: React.FC = () => {
       if (showLoader) {
         setLoading(false);
       }
+    }
+  };
+
+  const handlePanicSell = async () => {
+    if (!window.confirm('ARE YOU SURE? This will stop the bot and SELL ALL HOLDINGS immediately!')) return;
+    setIsPanicSelling(true);
+    try {
+      await botAPI.panicSell();
+      alert('PANIC SELL TRIGGERED: Bot stopped and all holdings are being liquidated.');
+      fetchDashboardData(true);
+    } catch (err) {
+      console.error(err);
+      alert('Error executing panic sell. Please check logs.');
+    } finally {
+      setIsPanicSelling(false);
     }
   };
 
@@ -223,11 +238,11 @@ const Dashboard: React.FC = () => {
         </Alert>
       )}
 
-      {systemStatus?.recent_errors?.length > 0 && (
+      {(systemStatus?.recent_errors?.length ?? 0) > 0 && (
         <Alert severity="error" sx={{ mb: 2 }}>
           <Typography variant="subtitle2" fontWeight="bold">API Error Detected</Typography>
           <ul style={{ margin: '4px 0 0 0', paddingLeft: '20px' }}>
-            {systemStatus.recent_errors.slice(0, 3).map((err: any, i: number) => (
+            {systemStatus?.recent_errors.slice(0, 3).map((err, i) => (
               <li key={i}>{err.provider}: {err.message}</li>
             ))}
           </ul>
@@ -369,21 +384,7 @@ const Dashboard: React.FC = () => {
                       ? <CircularProgress size={18} color="inherit" />
                       : <Warning />
                   }
-                  onClick={async () => {
-                    if (window.confirm("ARE YOU SURE? This will stop the bot and SELL ALL HOLDINGS immediately!")) {
-                      setIsPanicSelling(true);
-                      try {
-                        await botAPI.panicSell();
-                        alert("PANIC SELL TRIGGERED: Bot stopped and all holdings are being liquidated.");
-                        fetchDashboardData(true);
-                      } catch (error) {
-                        console.error(error);
-                        alert("Error executing panic sell. Please check logs.");
-                      } finally {
-                        setIsPanicSelling(false);
-                      }
-                    }
-                  }}
+                  onClick={handlePanicSell}
                   fullWidth
                   disabled={isPanicSelling || isReadOnly}
                   sx={{ mb: 1, bgcolor: '#d32f2f', '&:hover': { bgcolor: '#b71c1c' } }}

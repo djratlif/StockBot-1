@@ -299,8 +299,10 @@ async def get_system_status(db: Session = Depends(get_db)):
         
         # In SQLite/Postgres we might just use naive comparisons if timestamp was saved naive, but ActivityLog uses timezone.
         # However, TradingLog timestamp is naive. We'll query raw and format.
+        two_hours_ago_naive = datetime.now() - timedelta(hours=2)
         recent_err_logs = db.query(TradingLog).filter(
-            TradingLog.level == "ERROR"
+            TradingLog.level == "ERROR",
+            TradingLog.timestamp >= two_hours_ago_naive
         ).order_by(TradingLog.timestamp.desc()).limit(5).all()
         
         for err in recent_err_logs:

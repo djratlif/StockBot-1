@@ -104,22 +104,43 @@ class PortfolioService:
             
             # Get local holdings
             local_holdings = db.query(Holdings).all()
-            local_map = {h.symbol: h for h in local_holdings}
-            
+
+            # Build per-symbol local totals to detect drift vs Alpaca
+            local_by_symbol: Dict[str, list] = {}
+            for h in local_holdings:
+                local_by_symbol.setdefault(h.symbol, []).append(h)
+
             # Update or Delete local holdings based on Alpaca data
-            # Rule: Don't overwrite quantity (since AI models track their slice independently)
-            # but do delete if Alpaca has 0 shares altogether AND no pending orders
-            for holding in local_holdings:
-                if holding.symbol in alpaca_map:
-                    # Update only the current price so value calculations remain accurate
-                    pos = alpaca_map[holding.symbol]
-                    holding.current_price = float(pos.current_price)
-                elif holding.symbol in pending_symbols:
+            for symbol, rows in local_by_symbol.items():
+                if symbol in alpaca_map:
+                    pos = alpaca_map[symbol]
+                    alpaca_qty = float(pos.qty)
+                    local_total = sum(r.quantity for r in rows)
+
+                    # Update price on all rows
+                    for r in rows:
+                        r.current_price = float(pos.current_price)
+
+                    # If local quantities exceed Alpaca, scale them down proportionally
+                    if local_total > alpaca_qty + 0.001:
+                        scale = alpaca_qty / local_total
+                        remaining = alpaca_qty
+                        for i, r in enumerate(rows):
+                            if i == len(rows) - 1:
+                                r.quantity = max(0, remaining)
+                            else:
+                                new_qty = round(r.quantity * scale)
+                                r.quantity = new_qty
+                                remaining -= new_qty
+                            if r.quantity <= 0:
+                                db.delete(r)
+                elif symbol in pending_symbols:
                     # Keep holding active since the order is still open on Alpaca
                     continue
                 else:
-                    # Delete (no longer deeply in Alpaca, e.g. liquidated)
-                    db.delete(holding)
+                    # Delete (no longer held in Alpaca, e.g. liquidated)
+                    for r in rows:
+                        db.delete(r)
             
             # Don't create new holdings generically. 
             # We want trades executed by the bot to create the AI-specific holding rows.
@@ -262,6 +283,63 @@ class PortfolioService:
             logger.error(f"Error getting trading history: {str(e)}")
             return []
     
+    def _compute_fifo_realized_pnl(
+        self,
+        trades: list,
+        since: Optional[datetime] = None,
+    ) -> Dict[str, float]:
+        """
+        Run a chronological FIFO simulation over *trades* (already sorted asc).
+
+        Returns a dict mapping ai_provider -> cumulative realized P&L.
+        If *since* is provided, only sells executed on or after that datetime
+        contribute to the totals (buys are always consumed to keep the queue
+        accurate regardless of date).
+        """
+        queues: Dict[str, Dict] = {}
+        realized: Dict[str, float] = {}
+        since_naive = since.replace(tzinfo=None) if since else None
+
+        for trade in trades:
+            p = trade.ai_provider or "OPENAI"
+            if p not in queues:
+                queues[p] = {}
+                realized[p] = 0.0
+            sym = trade.symbol
+            if sym not in queues[p]:
+                queues[p][sym] = []
+
+            if trade.action == TradeAction.BUY:
+                queues[p][sym].append({"qty": trade.quantity, "price": trade.price})
+            elif trade.action == TradeAction.SELL:
+                qty = trade.quantity
+                profit = 0.0
+                q = queues[p][sym]
+                while qty > 0 and q:
+                    buy = q[0]
+                    if buy["qty"] <= qty:
+                        profit += (trade.price - buy["price"]) * buy["qty"]
+                        qty -= buy["qty"]
+                        q.pop(0)
+                    else:
+                        profit += (trade.price - buy["price"]) * qty
+                        buy["qty"] -= qty
+                        qty = 0
+
+                # Only count if after the *since* cutoff (or no cutoff)
+                if since_naive is None:
+                    realized[p] += profit
+                else:
+                    exec_naive = (
+                        trade.executed_at.replace(tzinfo=None)
+                        if trade.executed_at
+                        else None
+                    )
+                    if exec_naive and exec_naive >= since_naive:
+                        realized[p] += profit
+
+        return realized
+
     def get_trading_stats(self, db: Session) -> Optional[TradingStats]:
         """Get trading statistics"""
         # Same implementation as before, calculating from local Trade history and Holdings
@@ -300,48 +378,38 @@ class PortfolioService:
                     worst_open_symbol=worst_open_symbol
                 )
             
-            # 2. FIFO matching to find realized PnL of each Sell order
-            symbol_queues = {} # symbol -> list of {qty, price} buys
-            
+            # 2. FIFO matching — per-sell granularity needed for best/worst/avg stats
             today = date.today()
-            
-            closed_trades_today = [] # list of profit amounts for today's sells
-            total_profit_loss = 0 # all-time PnL
-            
+
             # Make sure we process chronologically
             trades_chronological = sorted(trades, key=lambda t: t.executed_at if t.executed_at else datetime.min)
-            
+
+            symbol_queues: Dict[str, list] = {}
+            closed_trades_today = []
+            total_profit_loss = 0.0
             for trade in trades_chronological:
                 sym = trade.symbol
                 if sym not in symbol_queues:
                     symbol_queues[sym] = []
-                
                 if trade.action == TradeAction.BUY:
                     symbol_queues[sym].append({"qty": trade.quantity, "price": trade.price})
                 elif trade.action == TradeAction.SELL:
-                    qty_to_sell = trade.quantity
-                    sell_price = trade.price
-                    trade_profit = 0
-                    
-                    queue = symbol_queues[sym]
-                    while qty_to_sell > 0 and queue:
-                        buy_item = queue[0]
-                        if buy_item["qty"] <= qty_to_sell:
-                            # consume this buy completely
-                            trade_profit += (sell_price - buy_item["price"]) * buy_item["qty"]
-                            qty_to_sell -= buy_item["qty"]
-                            queue.pop(0)
+                    qty = trade.quantity
+                    profit = 0.0
+                    q = symbol_queues[sym]
+                    while qty > 0 and q:
+                        buy = q[0]
+                        if buy["qty"] <= qty:
+                            profit += (trade.price - buy["price"]) * buy["qty"]
+                            qty -= buy["qty"]
+                            q.pop(0)
                         else:
-                            # consume partially
-                            trade_profit += (sell_price - buy_item["price"]) * qty_to_sell
-                            buy_item["qty"] -= qty_to_sell
-                            qty_to_sell = 0
-                    
-                    total_profit_loss += trade_profit
-                    
-                    # Check if executed today
+                            profit += (trade.price - buy["price"]) * qty
+                            buy["qty"] -= qty
+                            qty = 0
+                    total_profit_loss += profit
                     if trade.executed_at and trade.executed_at.date() == today:
-                        closed_trades_today.append(trade_profit)
+                        closed_trades_today.append(profit)
             
             winning_trades = sum(1 for p in closed_trades_today if p > 0)
             losing_trades = sum(1 for p in closed_trades_today if p <= 0)
@@ -529,61 +597,47 @@ class PortfolioService:
                     "total_positions": 0, "win_rate": 0.0, "score": 0
                 }
             
-            # --- START FIFO REALIZED PNL & WIN RATE CALCULATION ---
-            # To get accurate win rate and realized PNL, we have to run a light chronological FIFO simulation
-            from app.models.models import TradeAction
+            # --- FIFO REALIZED PNL & WIN RATE CALCULATION ---
             all_trades = db.query(Trades).order_by(Trades.executed_at.asc()).all()
-            
-            queues = {"OPENAI": {}, "GEMINI": {}, "ANTHROPIC": {}}
-            realized_pnls = {"OPENAI": 0.0, "GEMINI": 0.0, "ANTHROPIC": 0.0}
-            winning_sells = {"OPENAI": 0, "GEMINI": 0, "ANTHROPIC": 0}
-            total_sells = {"OPENAI": 0, "GEMINI": 0, "ANTHROPIC": 0}
+            realized_pnls = self._compute_fifo_realized_pnl(all_trades, since=start_of_day)
 
-            # Naive start of day for accurate comparison vs naive db times
+            # Win rate requires per-sell granularity — track winning/total sells today
+            winning_sells: Dict[str, int] = {}
+            total_sells: Dict[str, int] = {}
+            symbol_queues_wr: Dict[str, Dict] = {}
             start_naive = start_of_day.replace(tzinfo=None)
 
             for trade in all_trades:
                 p = trade.ai_provider or "OPENAI"
-                if p not in queues:
-                    queues[p] = {}
-                    realized_pnls[p] = 0.0
+                if p not in symbol_queues_wr:
+                    symbol_queues_wr[p] = {}
                     winning_sells[p] = 0
                     total_sells[p] = 0
-                
-                if trade.symbol not in queues[p]:
-                    queues[p][trade.symbol] = []
-
+                sym = trade.symbol
+                if sym not in symbol_queues_wr[p]:
+                    symbol_queues_wr[p][sym] = []
                 if trade.action == TradeAction.BUY:
-                    queues[p][trade.symbol].append({"qty": trade.quantity, "price": trade.price})
+                    symbol_queues_wr[p][sym].append({"qty": trade.quantity, "price": trade.price})
                 elif trade.action == TradeAction.SELL:
                     qty = trade.quantity
                     profit = 0.0
-                    while qty > 0 and queues[p][trade.symbol]:
-                        buy = queues[p][trade.symbol][0]
+                    q = symbol_queues_wr[p][sym]
+                    while qty > 0 and q:
+                        buy = q[0]
                         if buy["qty"] <= qty:
                             profit += (trade.price - buy["price"]) * buy["qty"]
                             qty -= buy["qty"]
-                            queues[p][trade.symbol].pop(0)
+                            q.pop(0)
                         else:
                             profit += (trade.price - buy["price"]) * qty
                             buy["qty"] -= qty
                             qty = 0
-                    
                     exec_naive = trade.executed_at.replace(tzinfo=None) if trade.executed_at else None
-                    # Compare naively to start of day naive since sqlite typically returns naive anyway or UTC
                     if exec_naive and exec_naive >= start_naive:
-                        if p not in total_sells:
-                            total_sells[p] = 0
-                        if p not in realized_pnls:
-                            realized_pnls[p] = 0.0
-                        if p not in winning_sells:
-                            winning_sells[p] = 0
-                        
-                        realized_pnls[p] += profit
                         total_sells[p] += 1
                         if profit > 0:
                             winning_sells[p] += 1
-            # --- END FIFO REALIZED PNL ---
+            # --- END FIFO ---
                 
             for trade in todays_trades:
                 p = trade.ai_provider or "OPENAI"
@@ -677,57 +731,32 @@ class PortfolioService:
 
     def can_make_trade(self, db: Session, max_daily_trades: int) -> bool:
         """Check if we can make another trade today"""
-        return True
+        try:
+            today = date.today()
+            start_of_day = datetime.combine(today, datetime.min.time())
+            trades_today = db.query(Trades).filter(
+                Trades.executed_at >= start_of_day
+            ).count()
+            return trades_today < max_daily_trades
+        except Exception as e:
+            logger.error(f"Error checking daily trade limit: {e}")
+            return False
 
     def record_portfolio_snapshots(self, db: Session) -> None:
         """Record a per-provider P&L snapshot. Called every 5 minutes by the background task."""
         try:
-            from app.models.models import Trades, TradeAction, Holdings, PortfolioSnapshot
-            from datetime import date
+            from app.models.models import Trades, Holdings, PortfolioSnapshot
 
             today = date.today()
             start_of_day = datetime.combine(today, datetime.min.time())
-            start_naive = start_of_day.replace(tzinfo=None)
 
             # ── FIFO: compute realized P&L per provider ──────────────────────
             all_trades = db.query(Trades).order_by(Trades.executed_at.asc()).all()
-            providers = ["OPENAI", "GEMINI", "ANTHROPIC"]
-            queues: Dict[str, Dict] = {p: {} for p in providers}
-            realized: Dict[str, float] = {p: 0.0 for p in providers}
-
-            for trade in all_trades:
-                p = trade.ai_provider or "OPENAI"
-                if p not in queues:
-                    queues[p] = {}
-                    realized[p] = 0.0
-                sym = trade.symbol
-                if sym not in queues[p]:
-                    queues[p][sym] = []
-
-                if trade.action == TradeAction.BUY:
-                    queues[p][sym].append({"qty": trade.quantity, "price": trade.price})
-                elif trade.action == TradeAction.SELL:
-                    qty = trade.quantity
-                    profit = 0.0
-                    q = queues[p][sym]
-                    while qty > 0 and q:
-                        buy = q[0]
-                        if buy["qty"] <= qty:
-                            profit += (trade.price - buy["price"]) * buy["qty"]
-                            qty -= buy["qty"]
-                            q.pop(0)
-                        else:
-                            profit += (trade.price - buy["price"]) * qty
-                            buy["qty"] -= qty
-                            qty = 0
-                    # Only count sells that happened today for the realized tally
-                    exec_naive = trade.executed_at.replace(tzinfo=None) if trade.executed_at else None
-                    if exec_naive and exec_naive >= start_naive:
-                        realized[p] += profit
+            realized = self._compute_fifo_realized_pnl(all_trades, since=start_of_day)
 
             # ── Unrealized P&L from live holdings ────────────────────────────
             holdings = db.query(Holdings).all()
-            unrealized: Dict[str, float] = {p: 0.0 for p in providers}
+            unrealized: Dict[str, float] = {}
             for h in holdings:
                 p = h.ai_provider or "OPENAI"
                 if p not in unrealized:
