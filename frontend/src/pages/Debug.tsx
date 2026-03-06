@@ -72,7 +72,7 @@ const Debug: React.FC = () => {
         logsAPI.getDebugInfo(logLimit),
         logsAPI.getSystemStatus(),
       ]);
-      
+
       setDebugInfo(debugResponse.data);
       setSystemStatus(statusResponse.data);
     } catch (error) {
@@ -224,7 +224,8 @@ const Debug: React.FC = () => {
             System Status
           </Typography>
           <Grid container spacing={2}>
-            <Grid item xs={12} md={3}>
+            {/* OpenAI Status */}
+            <Grid item xs={12} md={2}>
               <Card>
                 <CardContent>
                   <Typography variant="subtitle2" color="textSecondary">
@@ -232,24 +233,53 @@ const Debug: React.FC = () => {
                   </Typography>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     {systemStatus.openai_api_configured ? (
-                      systemStatus.openai_api_working ? (
-                        <Chip label="Working" color="success" size="small" />
-                      ) : (
-                        <Chip label="Error" color="error" size="small" />
-                      )
+                      <Chip label="Configured" color="success" size="small" />
                     ) : (
-                      <Chip label="Not Configured" color="warning" size="small" />
+                      <Chip label="Missing" color="error" size="small" />
                     )}
                   </Box>
-                  {systemStatus.openai_error && (
-                    <Typography variant="caption" color="error" display="block" sx={{ mt: 1 }}>
-                      {systemStatus.openai_error}
-                    </Typography>
-                  )}
                 </CardContent>
               </Card>
             </Grid>
-            <Grid item xs={12} md={3}>
+
+            {/* Gemini Status */}
+            <Grid item xs={12} md={2}>
+              <Card>
+                <CardContent>
+                  <Typography variant="subtitle2" color="textSecondary">
+                    Gemini API
+                  </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    {systemStatus.gemini_api_configured ? (
+                      <Chip label="Configured" color="success" size="small" />
+                    ) : (
+                      <Chip label="Missing" color="error" size="small" />
+                    )}
+                  </Box>
+                </CardContent>
+              </Card>
+            </Grid>
+
+            {/* Anthropic Status */}
+            <Grid item xs={12} md={2}>
+              <Card>
+                <CardContent>
+                  <Typography variant="subtitle2" color="textSecondary">
+                    Anthropic API
+                  </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    {systemStatus.anthropic_api_configured ? (
+                      <Chip label="Configured" color="success" size="small" />
+                    ) : (
+                      <Chip label="Missing" color="error" size="small" />
+                    )}
+                  </Box>
+                </CardContent>
+              </Card>
+            </Grid>
+
+            {/* Stock API */}
+            <Grid item xs={12} md={2}>
               <Card>
                 <CardContent>
                   <Typography variant="subtitle2" color="textSecondary">
@@ -270,21 +300,22 @@ const Debug: React.FC = () => {
                 </CardContent>
               </Card>
             </Grid>
-            <Grid item xs={12} md={3}>
+            {/* Database Status */}
+            <Grid item xs={12} md={2}>
               <Card>
                 <CardContent>
                   <Typography variant="subtitle2" color="textSecondary">
                     Database
                   </Typography>
-                  <Chip 
-                    label={systemStatus.database_connected ? "Connected" : "Disconnected"} 
-                    color={systemStatus.database_connected ? "success" : "error"} 
-                    size="small" 
+                  <Chip
+                    label={systemStatus.database_connected ? "Connected" : "Disconnected"}
+                    color={systemStatus.database_connected ? "success" : "error"}
+                    size="small"
                   />
                 </CardContent>
               </Card>
             </Grid>
-            <Grid item xs={12} md={3}>
+            <Grid item xs={12} md={2}>
               <Card>
                 <CardContent>
                   <Typography variant="subtitle2" color="textSecondary">
@@ -369,9 +400,10 @@ const Debug: React.FC = () => {
       {debugInfo && (
         <Paper sx={{ p: 2 }}>
           <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
-            <Tabs value={tabValue} onChange={handleTabChange}>
+            <Tabs value={tabValue} onChange={handleTabChange} variant="scrollable" scrollButtons="auto">
               <Tab label={`Errors (${debugInfo.summary.error_count})`} />
               <Tab label={`Warnings (${debugInfo.summary.warning_count})`} />
+              <Tab label={`Activity (${debugInfo.summary.total_activity_logs})`} />
               <Tab label={`API Calls (${debugInfo.summary.api_call_count})`} />
               <Tab label={`Trades (${debugInfo.summary.trade_count})`} />
               <Tab label={`All Logs (${debugInfo.summary.total_logs})`} />
@@ -387,32 +419,51 @@ const Debug: React.FC = () => {
           </TabPanel>
 
           <TabPanel value={tabValue} index={2}>
-            {renderLogList(debugInfo.api_calls, 'API Call Logs', <ApiIcon color="primary" />)}
+            {/* Display Activity logs in the Activity Panel */}
+            {renderLogList(
+              debugInfo.recent_activity.map((a: any) => ({ ...a, message: `${a.action}: ${a.details}`, level: 'INFO' })),
+              'Activity Feed',
+              <InfoIcon color="info" />
+            )}
           </TabPanel>
 
           <TabPanel value={tabValue} index={3}>
-            {renderLogList(debugInfo.trades, 'Trade Logs', <TradeIcon color="success" />)}
+            {renderLogList(debugInfo.api_calls, 'API Call Logs', <ApiIcon color="primary" />)}
           </TabPanel>
 
           <TabPanel value={tabValue} index={4}>
-            {renderLogList(debugInfo.info, 'All Logs', <InfoIcon color="info" />)}
+            {renderLogList(debugInfo.trades, 'Trade Logs', <TradeIcon color="success" />)}
+          </TabPanel>
+
+          <TabPanel value={tabValue} index={5}>
+            {/* Display merged Activity and Trading logs in the All panel */}
+            {renderLogList(
+              [
+                ...debugInfo.errors,
+                ...debugInfo.warnings,
+                ...debugInfo.info,
+                ...debugInfo.recent_activity.map((a: any) => ({ ...a, message: `${a.action}: ${a.details}`, level: 'INFO' }))
+              ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()),
+              'All Logs',
+              <InfoIcon color="info" />
+            )}
           </TabPanel>
         </Paper>
       )}
 
       {/* Rate Limiting Alert */}
-      {debugInfo && debugInfo.api_calls.some((log: any) => 
-        log.message.toLowerCase().includes('rate limit') || 
+      {debugInfo && debugInfo.api_calls.some((log: any) =>
+        log.message.toLowerCase().includes('rate limit') ||
         log.message.toLowerCase().includes('quota')
       ) && (
-        <Alert severity="warning" sx={{ mt: 2 }}>
-          <Typography variant="subtitle2">Rate Limiting Detected</Typography>
-          <Typography variant="body2">
-            API rate limiting has been detected in your logs. This may cause delays in bot operations.
-            Check the API Calls tab for more details.
-          </Typography>
-        </Alert>
-      )}
+          <Alert severity="warning" sx={{ mt: 2 }}>
+            <Typography variant="subtitle2">Rate Limiting Detected</Typography>
+            <Typography variant="body2">
+              API rate limiting has been detected in your logs. This may cause delays in bot operations.
+              Check the API Calls tab for more details.
+            </Typography>
+          </Alert>
+        )}
     </Box>
   );
 };

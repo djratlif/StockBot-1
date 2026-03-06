@@ -34,7 +34,7 @@ import {
   ShowChart,
   Warning,
 } from '@mui/icons-material';
-import { portfolioAPI, botAPI, tradesAPI } from '../services/api';
+import { portfolioAPI, botAPI, tradesAPI, logsAPI } from '../services/api';
 import type { PortfolioSummary, BotStatus, TradingStats, BotConfig, Holding } from '../services/api';
 import ActivityFeed from '../components/ActivityFeed';
 import AnimatedPrice from '../components/AnimatedPrice';
@@ -53,6 +53,7 @@ const Dashboard: React.FC = () => {
   const [botStatus, setBotStatus] = useState<BotStatus | null>(null);
   const [tradingStats, setTradingStats] = useState<TradingStats | null>(null);
   const [botConfig, setBotConfig] = useState<BotConfig | null>(null);
+  const [systemStatus, setSystemStatus] = useState<any>(null);
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState(false);
@@ -90,11 +91,12 @@ const Dashboard: React.FC = () => {
       }
       setError(null);
 
-      const [portfolio, bot, stats, configData] = await Promise.all([
+      const [portfolio, bot, stats, configData, statusData] = await Promise.all([
         portfolioAPI.getPortfolioSummary().catch(() => null),
         botAPI.getBotStatus().catch(() => null),
         tradesAPI.getTradeSummary().catch(() => null),
         botAPI.getBotConfig().catch(() => null),
+        logsAPI.getSystemStatus().catch(() => null),
       ]);
 
       const holdingsData = await portfolioAPI.getHoldings().catch(() => []);
@@ -103,6 +105,7 @@ const Dashboard: React.FC = () => {
       setBotStatus(bot);
       setTradingStats(stats);
       setBotConfig(configData);
+      setSystemStatus(statusData?.data || null);
       setHoldings(holdingsData || []);
       setLastUpdated(new Date());
 
@@ -217,6 +220,17 @@ const Dashboard: React.FC = () => {
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
           {error}
+        </Alert>
+      )}
+
+      {systemStatus?.recent_errors?.length > 0 && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          <Typography variant="subtitle2" fontWeight="bold">API Error Detected</Typography>
+          <ul style={{ margin: '4px 0 0 0', paddingLeft: '20px' }}>
+            {systemStatus.recent_errors.slice(0, 3).map((err: any, i: number) => (
+              <li key={i}>{err.provider}: {err.message}</li>
+            ))}
+          </ul>
         </Alert>
       )}
 

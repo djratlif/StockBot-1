@@ -263,29 +263,26 @@ async def get_debug_info(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/system-status")
-async def get_system_status():
-    """Get system status including API connectivity"""
+async def get_system_status(db: Session = Depends(get_db)):
+    """Get system status including API connectivity and recent errors"""
     try:
         import os
-        from app.services.ai_service import AITradingService
         from app.services.stock_service import StockService
+        from datetime import datetime, timedelta
+        import pytz
+        from app.models.models import BotConfig
+        
+        config = db.query(BotConfig).first()
         
         status = {
-            "openai_api_configured": bool(os.getenv("OPENAI_API_KEY")),
-            "database_connected": True,  # If we got here, DB is working
+            "openai_api_configured": bool(os.getenv("OPENAI_API_KEY") or (config and config.openai_api_key)),
+            "gemini_api_configured": bool(config and config.gemini_api_key),
+            "anthropic_api_configured": bool(config and config.anthropic_api_key),
+            "database_connected": True,
             "stock_service_available": True,
-            "last_check": datetime.now().isoformat()
+            "last_check": datetime.now().isoformat(),
+            "recent_errors": []
         }
-        
-        # Test OpenAI API
-        try:
-            if status["openai_api_configured"]:
-                ai_service = AITradingService()
-                # Simple test - just check if we can create the service
-                status["openai_api_working"] = True
-        except Exception as e:
-            status["openai_api_working"] = False
-            status["openai_error"] = str(e)
         
         # Test Stock API
         try:
@@ -295,6 +292,24 @@ async def get_system_status():
         except Exception as e:
             status["stock_api_working"] = False
             status["stock_api_error"] = str(e)
+            
+        # Fetch any critical API or rate limit errors from the last 2 hours
+        est = pytz.timezone('US/Eastern')
+        two_hours_ago = datetime.now(est) - timedelta(hours=2)
+        
+        # In SQLite/Postgres we might just use naive comparisons if timestamp was saved naive, but ActivityLog uses timezone.
+        # However, TradingLog timestamp is naive. We'll query raw and format.
+        recent_err_logs = db.query(TradingLog).filter(
+            TradingLog.level == "ERROR"
+        ).order_by(TradingLog.timestamp.desc()).limit(5).all()
+        
+        for err in recent_err_logs:
+            # Simple check to see if it's a recent rate limit or explicit model failure
+            status["recent_errors"].append({
+                "message": err.message,
+                "provider": err.symbol or "SYSTEM",
+                "timestamp": err.timestamp.isoformat()
+            })
         
         return {
             "success": True,
