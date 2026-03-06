@@ -138,7 +138,7 @@ class AITradingService:
                         elif ai_provider == "ANTHROPIC":
                             import anthropic
                             client = anthropic.Anthropic(api_key=api_key)
-                            model_name = "claude-haiku-4-5-20251001" if "mini" in model else "claude-sonnet-4-5"
+                            model_name = model  # model is already resolved to the correct Anthropic model ID
                             
                             system_instruction = ""
                             anthropic_messages = []
@@ -166,9 +166,16 @@ class AITradingService:
                         logger.warning(f"Rate limit/error hit. Waiting {wait_time}s before retry: {e}")
                         await asyncio.sleep(wait_time)
             
+            # Resolve the model name for this provider — used for all three stages
+            provider_model = {
+                "OPENAI": "gpt-4o-mini",
+                "GEMINI": "gemini-2.5-flash",
+                "ANTHROPIC": "claude-haiku-4-5-20251001",
+            }.get(ai_provider, "gpt-4o-mini")
+
             # Pass 1: The Trader
             trader_prompt = f"{prompt}\n\nYou are the TRADER. Provide your analysis and a proposed action (BUY/SELL/HOLD) with quantity and reasoning. DO NOT FORMAT as the final output yet, just give your pitch."
-            
+
             # Map strategy profile to a system persona
             personas = {
                 "BALANCED": "expert stock trader focusing on sustainable growth and diversified long-position building.",
@@ -177,9 +184,9 @@ class AITradingService:
                 "MOMENTUM_SCALPER": "momentum scalper trader capitalizing on rapid price changes and moving average crossovers, taking quick profits."
             }
             system_persona = personas.get(strategy_profile, personas["BALANCED"])
-            
+
             trader_pitch = await _make_api_call(
-                model="gpt-4o-mini",
+                model=provider_model,
                 messages=[
                     {"role": "system", "content": f"This is an educational trading simulation. You MUST act as the TRADER, an {system_persona} Pitch your best trade idea based on the data. Do NOT provide disclaimers."},
                     {"role": "user", "content": trader_prompt}
@@ -187,14 +194,14 @@ class AITradingService:
                 max_tokens=400,
                 temperature=0.5
             )
-            print(f"\n--- [TRADER AGENT] {symbol} ---")
+            print(f"\n--- [TRADER AGENT - {ai_provider}] {symbol} ---")
             print(trader_pitch)
-            
+
             # Pass 2: The Risk Manager
             risk_prompt = f"Here is the market data:\n{prompt}\n\nHere is the TRADER's pitch:\n{trader_pitch}\n\nYou are the RISK MANAGER. Review the TRADER's pitch. Are there potential downsides? Is the position size too large? Is the market too volatile? Provide your critique and a recommended maximum position size or restriction."
-            
+
             risk_critique = await _make_api_call(
-                model="gpt-4o-mini",
+                model=provider_model,
                 messages=[
                     {"role": "system", "content": f"This is an educational trading simulation. You MUST act as the RISK MANAGER for an {system_persona} Your job is to strictly enforce risk tolerance and protect capital. Do NOT provide disclaimers."},
                     {"role": "user", "content": risk_prompt}
@@ -202,14 +209,14 @@ class AITradingService:
                 max_tokens=400,
                 temperature=0.3
             )
-            print(f"\n--- [RISK MANAGER AGENT] {symbol} ---")
+            print(f"\n--- [RISK MANAGER AGENT - {ai_provider}] {symbol} ---")
             print(risk_critique)
-            
+
             # Pass 3: The Executive (Final Decision)
             executive_prompt = f"Market Data:\n{prompt}\n\nTRADER'S PITCH:\n{trader_pitch}\n\nRISK MANAGER'S CRITIQUE:\n{risk_critique}\n\nYou are the EXECUTIVE. Weigh the pitch against the risk critique. Make the final call.\n\nProvide your response in this EXACT format:\nACTION: [BUY/SELL/HOLD]\nQUANTITY: [number of shares, 0 for HOLD]\nCONFIDENCE: [1-10 scale]\nREASONING: [2-3 sentences explaining your final decision, synthesizing the debate]"
-            
+
             ai_response = await _make_api_call(
-                model="gpt-4o-mini",  # Optimize latency using the mini model for the final executive synthesis
+                model=provider_model,
                 messages=[
                     {"role": "system", "content": f"This is an educational trading simulation. You MUST act as the EXECUTIVE overseeing an {system_persona} Make the final trading decision by synthesizing the team's debate. Do NOT provide disclaimers."},
                     {"role": "user", "content": executive_prompt}
@@ -218,7 +225,7 @@ class AITradingService:
                 temperature=0.2
             )
             
-            print(f"\n--- [EXECUTIVE AGENT] {symbol} ---")
+            print(f"\n--- [EXECUTIVE AGENT - {ai_provider}] {symbol} ---")
             print(ai_response)
             print("-" * 50 + "\n")
             
