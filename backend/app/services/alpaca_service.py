@@ -197,6 +197,18 @@ class AlpacaService:
             logger.error(f"Error getting Alpaca positions: {str(e)}")
             return []
 
+    def get_orders(self, status: str = 'open'):
+        """Get orders by status"""
+        if not self.trading_client:
+            return []
+        try:
+            req_status = OrderStatus.OPEN if status.lower() == 'open' else OrderStatus.CLOSED
+            request = GetOrdersRequest(status=req_status)
+            return self.trading_client.get_orders(filter=request)
+        except Exception as e:
+            logger.error(f"Error getting Alpaca orders: {str(e)}")
+            return []
+
     def submit_order(self, symbol: str, qty: int, side: str, type: str = 'market', time_in_force: str = 'day'):
         """Submit an order to Alpaca"""
         if not self.trading_client:

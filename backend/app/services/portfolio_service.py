@@ -95,18 +95,28 @@ class PortfolioService:
             # Map alpaca positions by symbol
             alpaca_map = {p.symbol: p for p in alpaca_positions}
             
+            # 2.5 Fetch open orders to protect pending holdings
+            try:
+                open_orders = alpaca_service.get_orders(status='open')
+                pending_symbols = {o.symbol for o in open_orders}
+            except Exception:
+                pending_symbols = set()
+            
             # Get local holdings
             local_holdings = db.query(Holdings).all()
             local_map = {h.symbol: h for h in local_holdings}
             
             # Update or Delete local holdings based on Alpaca data
             # Rule: Don't overwrite quantity (since AI models track their slice independently)
-            # but do delete if Alpaca has 0 shares altogether
+            # but do delete if Alpaca has 0 shares altogether AND no pending orders
             for holding in local_holdings:
                 if holding.symbol in alpaca_map:
                     # Update only the current price so value calculations remain accurate
                     pos = alpaca_map[holding.symbol]
                     holding.current_price = float(pos.current_price)
+                elif holding.symbol in pending_symbols:
+                    # Keep holding active since the order is still open on Alpaca
+                    continue
                 else:
                     # Delete (no longer deeply in Alpaca, e.g. liquidated)
                     db.delete(holding)

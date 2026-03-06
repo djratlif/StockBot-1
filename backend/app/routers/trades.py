@@ -17,7 +17,7 @@ router = APIRouter()
 @router.get("/", response_model=List[TradeResponse])
 async def get_trading_history(
     db: Session = Depends(get_db),
-    limit: int = Query(default=50, ge=1, le=200, description="Number of trades to return"),
+    limit: int = Query(default=50, ge=1, le=1000, description="Number of trades to return"),
     offset: int = Query(default=0, ge=0, description="Number of trades to skip")
 ):
     """Get trading history with pagination"""
@@ -62,7 +62,7 @@ async def get_todays_trade_count(db: Session = Depends(get_db)):
 async def get_trades_by_symbol(
     symbol: str,
     db: Session = Depends(get_db),
-    limit: int = Query(default=50, ge=1, le=200)
+    limit: int = Query(default=50, ge=1, le=1000)
 ):
     """Get trading history for a specific symbol"""
     try:

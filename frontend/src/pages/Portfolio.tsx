@@ -261,7 +261,7 @@ const Portfolio: React.FC = () => {
       const [summary, holdingsData, tradesData] = await Promise.all([
         portfolioAPI.getPortfolioSummary(),
         portfolioAPI.getHoldings(),
-        tradesAPI.getTradingHistory(50)
+        tradesAPI.getTradingHistory(500)
       ]);
 
       setPortfolioSummary(summary);
