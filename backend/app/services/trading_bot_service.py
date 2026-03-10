@@ -341,10 +341,21 @@ class TradingBotService:
                     usable_cash = min(portfolio.cash_balance, max(0.0, allocated_limit - invested))
 
                     if not ai_service.validate_trading_decision(decision, usable_cash, provider_holdings, allocation_exceeded):
-                        logger.warning(f"Invalid or blocked {provider_name} trading decision for {decision.symbol}")
+                        # Determine the specific reason so it shows in the activity feed
+                        if decision.action.value == "BUY" and allocation_exceeded:
+                            block_reason = f"allocation limit exceeded (invested ${invested:,.2f} of ${allocated_limit:,.2f})"
+                        elif decision.action.value == "BUY":
+                            required = decision.quantity * decision.current_price
+                            block_reason = f"insufficient cash (need ${required:,.2f}, have ${usable_cash:,.2f})"
+                        elif decision.action.value == "SELL":
+                            owned = provider_holdings.get(decision.symbol, {}).get('quantity', 0)
+                            block_reason = f"not enough shares to sell (want {decision.quantity}, own {owned})"
+                        else:
+                            block_reason = "failed validation"
+                        logger.warning(f"Blocked {provider_name} {decision.action.value} {decision.symbol}: {block_reason}")
                         db.add(ActivityLog(
                             action=f"{provider_name}_TRADE_BLOCKED",
-                            details=f"[{provider_name}] {decision.action.value} {decision.quantity} shares of {decision.symbol} blocked — failed validation",
+                            details=f"[{provider_name}] {decision.action.value} {decision.quantity} shares of {decision.symbol} blocked — {block_reason}",
                             timestamp=datetime.now(self.est)
                         ))
                         db.commit()

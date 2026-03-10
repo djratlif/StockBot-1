@@ -142,22 +142,19 @@ const IntradayPerformanceChart: React.FC = () => {
         );
     }
 
-    // ── Build unified sorted time axis ──────────────────────────────────────
-    const allTimes = new Set<string>();
-    Object.values(data.providers).forEach((pts) => pts.forEach((p) => allTimes.add(p.time)));
-    // Always include "now" so the total P&L line has a current endpoint
-    allTimes.add(data.now_time);
-    const sortedTimes = Array.from(allTimes).sort();
-    const labels = sortedTimes.map((t) => t.substring(0, 5));
+    // ── TAB 0: Realized time axis ────────────────────────────────────────────
+    const realizedTimes = new Set<string>();
+    Object.values(data.providers).forEach((pts) => pts.forEach((p) => realizedTimes.add(p.time)));
+    const sortedRealizedTimes = Array.from(realizedTimes).sort();
+    const realizedLabels = sortedRealizedTimes.map((t) => t.substring(0, 5));
 
-    // ── TAB 0: Realized Gains only ──────────────────────────────────────────
     const realizedDatasets = Object.entries(data.providers)
         .filter(([, pts]) => pts.length > 0)
         .map(([provider, pts]) => {
             const colors = PROVIDER_COLORS[provider] || { border: '#fff', background: 'rgba(255,255,255,0.08)', label: provider };
             const ptMap = new Map(pts.map((p) => [p.time, p.cumulative_pnl]));
             let lastVal = 0;
-            const values = sortedTimes.map((t) => {
+            const values = sortedRealizedTimes.map((t) => {
                 if (ptMap.has(t)) lastVal = ptMap.get(t)!;
                 return lastVal;
             });
@@ -175,63 +172,44 @@ const IntradayPerformanceChart: React.FC = () => {
             };
         });
 
-    // ── TAB 1: Total P&L (realized + unrealized endpoint) ──────────────────
-    // Each model gets its realized step-line PLUS a final point at now_time
-    // showing realized + current unrealized (dashed from last sell to now).
-    const totalDatasets: any[] = [];
+    // ── TAB 1: Total P&L from PortfolioSnapshot time-series ─────────────────
+    // Uses saved snapshots (every 5 min) so the line actually fluctuates with prices.
+    const totalSnapSeries: Record<string, { time: string; total_pnl: number }[]> = (data as any).total_series ?? {};
 
-    Object.entries(data.providers).forEach(([provider, pts]) => {
-        const colors = PROVIDER_COLORS[provider] || { border: '#fff', background: 'rgba(255,255,255,0.08)', label: provider };
-        const ptMap = new Map(pts.map((p) => [p.time, p.cumulative_pnl]));
-        const unrealized = data.unrealized_pnl?.[provider] ?? 0;
-        const lastRealized = pts.length > 0 ? pts[pts.length - 1].cumulative_pnl : 0;
+    const totalTimes = new Set<string>();
+    Object.values(totalSnapSeries).forEach((pts) => pts.forEach((p) => totalTimes.add(p.time)));
+    // add now_time as trailing endpoint
+    totalTimes.add(data.now_time);
+    const sortedTotalTimes = Array.from(totalTimes).sort();
+    const totalLabels = sortedTotalTimes.map((t) => t.substring(0, 5));
 
-        // Solid realized line (same as tab 0)
-        let lastVal = 0;
-        const realizedValues = sortedTimes.map((t) => {
-            if (ptMap.has(t)) lastVal = ptMap.get(t)!;
-            return lastVal;
+    const totalDatasets = Object.entries(totalSnapSeries)
+        .filter(([, pts]) => pts.length > 0)
+        .map(([provider, pts]) => {
+            const colors = PROVIDER_COLORS[provider] || { border: '#fff', background: 'rgba(255,255,255,0.08)', label: provider };
+            const ptMap = new Map(pts.map((p) => [p.time, p.total_pnl]));
+            // Append current unrealized as final data point at now_time
+            const currentTotal = (pts[pts.length - 1]?.total_pnl ?? 0);
+            ptMap.set(data.now_time, parseFloat((currentTotal).toFixed(2)));
+            let lastVal: number | null = null;
+            const values = sortedTotalTimes.map((t) => {
+                if (ptMap.has(t)) lastVal = ptMap.get(t)!;
+                return lastVal;
+            });
+            return {
+                label: colors.label,
+                data: values,
+                borderColor: colors.border,
+                backgroundColor: colors.background,
+                borderWidth: 2.5,
+                pointRadius: 3,
+                pointHoverRadius: 6,
+                pointBackgroundColor: colors.border,
+                tension: 0.2,
+                fill: false,
+                spanGaps: true,
+            };
         });
-
-        // Total line: realized + unrealized, only shown from now_time onward as a single endpoint
-        // We show it as a second dataset with a dashed style bridging the last realized to now
-        const lastSellTime = pts.length > 0 ? pts[pts.length - 1].time : '09:30:00';
-        const totalValues = sortedTimes.map((t) => {
-            if (t < lastSellTime) return null;  // null = gap in line
-            if (t === data.now_time || t > lastSellTime) return parseFloat((lastRealized + unrealized).toFixed(2));
-            return null;
-        });
-
-        // Solid: realized
-        totalDatasets.push({
-            label: colors.label,
-            data: realizedValues,
-            borderColor: colors.border,
-            backgroundColor: colors.background,
-            borderWidth: 2.5,
-            pointRadius: 3,
-            pointHoverRadius: 6,
-            pointBackgroundColor: colors.border,
-            tension: 0.2,
-            fill: false,
-        });
-
-        // Dashed: realized + unrealized bridge
-        totalDatasets.push({
-            label: `${colors.label} (incl. open)`,
-            data: totalValues,
-            borderColor: colors.border,
-            backgroundColor: 'transparent',
-            borderWidth: 2,
-            borderDash: [6, 4],
-            pointRadius: 4,
-            pointHoverRadius: 7,
-            pointBackgroundColor: colors.border,
-            tension: 0,
-            fill: false,
-            spanGaps: false,
-        });
-    });
 
     // ── Y-axis range ────────────────────────────────────────────────────────
     const activeDatasets = tab === 0 ? realizedDatasets : totalDatasets;
@@ -240,6 +218,7 @@ const IntradayPerformanceChart: React.FC = () => {
     const maxVal = Math.max(0, ...allValues);
     const pad = Math.max(Math.abs(maxVal - minVal) * 0.15, 0.5);
 
+    const activeLabels = tab === 0 ? realizedLabels : totalLabels;
     const options = buildOptions(theme, minVal, maxVal, pad);
 
     // ── Summary chips ───────────────────────────────────────────────────────
@@ -288,14 +267,14 @@ const IntradayPerformanceChart: React.FC = () => {
                 <Typography variant="caption" sx={{ color: 'text.disabled', alignSelf: 'center', ml: 'auto' }}>
                     {tab === 0
                         ? 'Completed sell trades only · Updates every 30s'
-                        : 'Solid = realized · Dashed = realized + open positions · Updates every 30s'}
+                        : 'Realized + unrealized · Sampled every 5 min · Updates every 30s'}
                 </Typography>
             </Box>
 
             {/* Chart */}
             <Box sx={{ height: 260, position: 'relative' }}>
                 <Line
-                    data={{ labels, datasets: tab === 0 ? realizedDatasets : totalDatasets }}
+                    data={{ labels: activeLabels, datasets: tab === 0 ? realizedDatasets : totalDatasets }}
                     options={options as any}
                 />
             </Box>

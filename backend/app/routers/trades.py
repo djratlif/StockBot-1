@@ -134,25 +134,26 @@ async def get_daily_report(db: Session = Depends(get_db)):
 
 @router.get("/performance/intraday")
 async def get_intraday_performance(db: Session = Depends(get_db)):
-    """Get intraday cumulative realized P&L per AI model (sell trades only, FIFO matched).
-    Also returns current unrealized P&L per provider for the Total P&L tab."""
+    """Get intraday P&L per AI model.
+    - realized_series: FIFO-matched cumulative realized P&L from today's sell trades
+    - total_series: PortfolioSnapshot time-series (realized + unrealized) — fluctuates with prices
+    - unrealized_pnl: current snapshot for summary chips
+    """
     try:
-        from app.models.models import Trades, TradeAction, Holdings
+        from app.models.models import Trades, TradeAction, Holdings, PortfolioSnapshot
         from datetime import date, datetime
+        import pytz
 
         today = date.today()
         start_of_day = datetime.combine(today, datetime.min.time())
         start_naive = start_of_day.replace(tzinfo=None)
         now_time = datetime.now().strftime("%H:%M:%S")
 
-        # All historical trades (chronological) for FIFO matching
-        all_trades = db.query(Trades).order_by(Trades.executed_at.asc()).all()
-
         providers = ["OPENAI", "GEMINI", "ANTHROPIC"]
 
-        # Per-provider FIFO buy queues (symbol -> list of {qty, price})
+        # ── Realized series: FIFO from today's sell trades ─────────────────
+        all_trades = db.query(Trades).order_by(Trades.executed_at.asc()).all()
         queues = {p: {} for p in providers}
-        # Per-provider time-series: list of {time, cumulative_pnl}
         series = {p: [] for p in providers}
         cumulative = {p: 0.0 for p in providers}
 
@@ -169,7 +170,6 @@ async def get_intraday_performance(db: Session = Depends(get_db)):
 
             if trade.action == TradeAction.BUY:
                 queues[p][sym].append({"qty": trade.quantity, "price": trade.price})
-
             elif trade.action == TradeAction.SELL:
                 qty = trade.quantity
                 profit = 0.0
@@ -184,8 +184,6 @@ async def get_intraday_performance(db: Session = Depends(get_db)):
                         profit += (trade.price - buy["price"]) * qty
                         buy["qty"] -= qty
                         qty = 0
-
-                # Only add to intraday series if this sell happened today
                 exec_naive = trade.executed_at.replace(tzinfo=None) if trade.executed_at else None
                 if exec_naive and exec_naive >= start_naive:
                     cumulative[p] += profit
@@ -194,37 +192,56 @@ async def get_intraday_performance(db: Session = Depends(get_db)):
                         "cumulative_pnl": round(cumulative[p], 2)
                     })
 
-        # Compute current unrealized P&L per provider from live holdings
+        # ── Total P&L series: from PortfolioSnapshot (fluctuates with prices) ──
+        est = pytz.timezone("US/Eastern")
+        start_utc = pytz.utc.localize(start_of_day)
+        snapshots = (
+            db.query(PortfolioSnapshot)
+            .filter(PortfolioSnapshot.snapshot_at >= start_utc)
+            .order_by(PortfolioSnapshot.snapshot_at.asc())
+            .all()
+        )
+        total_series = {p: [] for p in providers}
+        for snap in snapshots:
+            p = snap.ai_provider or "OPENAI"
+            if p not in total_series:
+                total_series[p] = []
+            snap_local = snap.snapshot_at.astimezone(est)
+            total_series[p].append({
+                "time": snap_local.strftime("%H:%M:%S"),
+                "total_pnl": round(snap.total_pnl, 2)
+            })
+
+        # ── Current unrealized for summary chips ────────────────────────────
         holdings = db.query(Holdings).all()
         unrealized = {p: 0.0 for p in providers}
         for h in holdings:
             p = h.ai_provider or "OPENAI"
             if p not in unrealized:
                 unrealized[p] = 0.0
-            # (current_price - avg_cost) * quantity (handles short positions too)
             unrealized[p] += (h.current_price - h.average_cost) * h.quantity
 
-        # Always include a $0 anchor point at market open (09:30) so graph starts at zero
+        # Anchor realized series at $0 at market open
         anchor = {"time": "09:30:00", "cumulative_pnl": 0.0}
         result = {}
         for p in set(list(providers) + list(series.keys())):
             pts = series.get(p, [])
-            if pts:
-                if pts[0]["time"] > "09:30:00":
-                    pts = [anchor] + pts
-            else:
+            if pts and pts[0]["time"] > "09:30:00":
+                pts = [anchor] + pts
+            elif not pts:
                 pts = [anchor]
             result[p] = pts
 
         return {
             "date": today.strftime("%Y-%m-%d"),
             "providers": result,
+            "total_series": total_series,
             "unrealized_pnl": {p: round(v, 2) for p, v in unrealized.items()},
             "now_time": now_time,
         }
 
     except Exception as e:
-        logger.error(f"Error getting intraday performance: {str(e)}") 
+        logger.error(f"Error getting intraday performance: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 

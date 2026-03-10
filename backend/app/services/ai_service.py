@@ -363,9 +363,14 @@ Consider:
         try:
             logger.info(f"Parsing AI response for {stock_info.symbol}:")
             logger.info(f"Full AI Response: {response}")
-            
+
+            # Strip markdown formatting (bold, italic, headers) so regexes work regardless
+            # of whether the model wraps keys/values in ** or # decorators
+            clean = re.sub(r'\*+', '', response)   # remove ** and *
+            clean = re.sub(r'^#+\s*', '', clean, flags=re.MULTILINE)  # remove # headers
+
             # Extract action
-            action_match = re.search(r'ACTION:\s*(BUY|SELL|HOLD)', response, re.IGNORECASE)
+            action_match = re.search(r'ACTION:\s*(BUY|SELL|HOLD)', clean, re.IGNORECASE)
             if not action_match:
                 logger.error(f"Could not parse ACTION from AI response for {stock_info.symbol}")
                 logger.error(f"Looking for pattern 'ACTION: BUY/SELL/HOLD' in: {response[:500]}...")
@@ -379,30 +384,28 @@ Consider:
                 return None  # No trading decision needed
             
             # Extract quantity
-            quantity_match = re.search(r'QUANTITY:\s*(\d+)', response)
+            quantity_match = re.search(r'QUANTITY:\s*(\d+)', clean)
             if not quantity_match:
                 logger.error(f"Could not parse QUANTITY from AI response for {stock_info.symbol}")
-                logger.error(f"Looking for pattern 'QUANTITY: [number]' in: {response[:500]}...")
+                logger.error(f"Looking for pattern 'QUANTITY: [number]' in: {clean[:500]}...")
                 return None
-            
+
             quantity = int(quantity_match.group(1))
             logger.info(f"Parsed QUANTITY: {quantity}")
-            
+
             if quantity <= 0:
                 logger.warning(f"Invalid quantity {quantity} for {stock_info.symbol}")
                 return None
-            
+
             # Extract confidence
-            confidence_match = re.search(r'CONFIDENCE:\s*(\d+)', response)
-            # If safety filters strip the confidence out but a BUY/SELL was successfully generated, 
-            # assume high confidence to allow the trade to proceed
+            confidence_match = re.search(r'CONFIDENCE:\s*(\d+)', clean)
             default_confidence = 8 if action in ["BUY", "SELL"] else 5
             confidence = int(confidence_match.group(1)) if confidence_match else default_confidence
-            confidence = max(1, min(10, confidence))  # Ensure it's between 1-10
+            confidence = max(1, min(10, confidence))
             logger.info(f"Parsed CONFIDENCE: {confidence}")
-            
+
             # Extract reasoning
-            reasoning_match = re.search(r'REASONING:\s*(.+?)(?:\n|$)', response, re.DOTALL)
+            reasoning_match = re.search(r'REASONING:\s*(.+?)(?:\n|$)', clean, re.DOTALL)
             reasoning = reasoning_match.group(1).strip() if reasoning_match else fallback_reasoning
             logger.info(f"Parsed REASONING: {reasoning[:100]}...")
             
