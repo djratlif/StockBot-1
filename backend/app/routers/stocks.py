@@ -15,7 +15,7 @@ async def get_stock_info(symbol: str):
     """Get comprehensive stock information"""
     try:
         symbol = symbol.upper()
-        stock_info = stock_service.get_stock_info(symbol)
+        stock_info = await stock_service.get_stock_info(symbol)
         
         if not stock_info:
             raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")
@@ -32,7 +32,7 @@ async def get_stock_price(symbol: str):
     """Get current stock price"""
     try:
         symbol = symbol.upper()
-        price = stock_service.get_current_price(symbol)
+        price = await stock_service.get_current_price(symbol)
         
         if price is None:
             raise HTTPException(status_code=404, detail=f"Price for {symbol} not found")
@@ -121,7 +121,7 @@ async def get_trending_stocks():
         stocks_info = []
         for symbol in trending[:10]:  # Limit to top 10 to avoid rate limits
             try:
-                info = stock_service.get_stock_info(symbol)
+                info = await stock_service.get_stock_info(symbol)
                 if info:
                     stocks_info.append(info)
             except Exception as e:
@@ -151,7 +151,7 @@ async def validate_stock_symbol(symbol: str):
     """Validate if a stock symbol exists"""
     try:
         symbol = symbol.upper()
-        is_valid = stock_service.validate_symbol(symbol)
+        is_valid = await stock_service.validate_symbol(symbol)
         
         return APIResponse(
             success=is_valid,
@@ -167,7 +167,7 @@ async def save_market_data(symbol: str, db: Session = Depends(get_db)):
     """Save current market data to database"""
     try:
         symbol = symbol.upper()
-        stock_info = stock_service.get_stock_info(symbol)
+        stock_info = await stock_service.get_stock_info(symbol)
         
         if not stock_info:
             raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")

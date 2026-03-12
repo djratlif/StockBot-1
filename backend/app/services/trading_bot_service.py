@@ -151,11 +151,29 @@ class TradingBotService:
                     history = await stock_service.get_historical_data(sym, period="1mo")
                     news = await stock_service.fetch_news(sym, limit=3)
                     if info and history:
-                        market_data[sym] = {
-                            "info": info,
-                            "history": history,
-                            "news": news
-                        }
+                        # Math Pre-filter: Only pay the AI to analyze this stock if we own it OR if it's highly volatile
+                        is_interesting = True
+                        if sym not in current_holdings:
+                            dates = sorted(history.keys())
+                            if len(dates) >= 5:
+                                try:
+                                    recent_close = float(history[dates[-1]]['4. close'])
+                                    old_close = float(history[dates[-5]]['4. close'])
+                                    week_change_pct = abs((recent_close - old_close) / old_close) * 100
+                                    
+                                    # Skip if it hasn't moved at least 1.5% this week and daily change is under 1%
+                                    if week_change_pct < 1.5 and abs(info.change_percent) < 1.0:
+                                        logger.info(f"Math Pre-filter: Bypassing AI on {sym} (flat stock, week change: {week_change_pct:.2f}%)")
+                                        is_interesting = False
+                                except Exception as math_e:
+                                    pass
+                        
+                        if is_interesting:
+                            market_data[sym] = {
+                                "info": info,
+                                "history": history,
+                                "news": news
+                            }
                 except Exception as e:
                     logger.error(f"Error prefetching data for {sym}: {e}")
             self.is_fetching = False
@@ -192,6 +210,11 @@ class TradingBotService:
             
             all_results = []
 
+            # Define Celery group for concurrent Fan-Out
+            from celery import group
+            from app.tasks.trading_tasks import analyze_single_stock_task
+            task_signatures = []
+
             for provider_info in providers:
                 if not self.is_running:
                     logger.info("Bot execution manually stopped - aborting remaining provider setup")
@@ -215,7 +238,7 @@ class TradingBotService:
                     status_msg = f"OVER LIMIT by ${allocation_overage:,.2f} — bot will only SELL" if allocation_exceeded else f"usable cash: ${usable_cash:,.2f}"
                     cycle_log = ActivityLog(
                         action=f"{provider_name}_ANALYSIS_CYCLE",
-                        details=f"[{provider_name}] Analyzing {len(stocks_to_analyze)} stocks | Allocated: ${allocated_limit:,.2f} | Invested: ${invested:,.2f} | {status_msg}",
+                        details=f"[{provider_name}] Fanning out {len(stocks_to_analyze)} stocks to queue | Allocated: ${allocated_limit:,.2f} | Invested: ${invested:,.2f} | {status_msg}",
                         timestamp=datetime.now(self.est)
                     )
                     db.add(cycle_log)
@@ -223,63 +246,47 @@ class TradingBotService:
                 except Exception as log_error:
                     logger.error(f"Failed to log analysis cycle: {log_error}")
 
-                # Build tasks for this provider's symbols and run them concurrently as a batch.
-                # Running providers sequentially (not all 3 at once) prevents rate-limit pile-ups
-                # on Gemini/Anthropic which have tighter quotas than OpenAI.
-                provider_tasks = []
                 for symbol in stocks_to_analyze:
                     if symbol not in market_data:
                         logger.warning(f"Skipping {symbol} due to missing pre-fetched market data.")
                         continue
+                    
+                    # Append the micro-task to the massive parallel execution array
+                    task_signatures.append(
+                        analyze_single_stock_task.s(
+                            provider_name,
+                            provider_api_key,
+                            symbol,
+                            usable_cash,
+                            allocation_exceeded,
+                            allocation_overage,
+                            portfolio.total_value,
+                            config.risk_tolerance.value,
+                            getattr(config, 'strategy_profile', 'BALANCED'),
+                            config.max_position_size,
+                            provider_holdings
+                        )
+                    )
 
-                    stock_data = market_data[symbol]
+            # --- MASSIVE CRITICAL UPGRADE ---
+            # Close the SQLite database connection to completely free up the connection pool
+            # while the multiple Celery workers hit all three APIs concurrently for minutes. 
+            db.close()
+            
+            results = []
+            if task_signatures:
+                logger.info(f"Fanning out {len(task_signatures)} AI network tasks to Celery...")
+                try:
+                    job = group(task_signatures)
+                    celery_result = job.apply_async()
+                    # Hang the orchestrator thread securely until all background APIs resolve
+                    results = celery_result.get(timeout=300) 
+                except Exception as e:
+                    logger.error(f"Celery group execution failed: {e}")
 
-                    async def run_analysis(p_name=provider_name, p_key=provider_api_key, sym=symbol, s_data=stock_data, p_hold=provider_holdings, u_cash=usable_cash, a_exceed=allocation_exceeded, a_over=allocation_overage, p_val=portfolio.total_value):
-                        try:
-                            # Explicitly log the API request
-                            try:
-                                db.add(ActivityLog(
-                                    action=f"{p_name}_API_REQUEST",
-                                    details=f"[{p_name}] External API Request: Analyzing {sym}",
-                                    timestamp=datetime.now(self.est)
-                                ))
-                                db.commit()
-                            except Exception:
-                                pass
-
-                            decision = await asyncio.wait_for(
-                                ai_service.analyze_stock_for_trading(
-                                    symbol=sym,
-                                    portfolio_cash=u_cash,
-                                    current_holdings=p_hold,
-                                    portfolio_value=p_val,
-                                    risk_tolerance=config.risk_tolerance,
-                                    strategy_profile=getattr(config, 'strategy_profile', 'BALANCED'),
-                                    recent_news=s_data["news"],
-                                    max_position_size=config.max_position_size,
-                                    allocation_exceeded=a_exceed,
-                                    allocation_overage=a_over,
-                                    db_session=None,
-                                    ai_provider=p_name,
-                                    api_key=p_key,
-                                    pre_fetched_info=s_data["info"],
-                                    pre_fetched_history=s_data["history"]
-                                ),
-                                timeout=90.0
-                            )
-                            return {"decision": decision, "symbol": sym, "provider": p_name, "error": None}
-                        except asyncio.TimeoutError:
-                            return {"decision": None, "symbol": sym, "provider": p_name, "error": "timeout"}
-                        except Exception as e:
-                            return {"decision": None, "symbol": sym, "provider": p_name, "error": str(e)}
-
-                    provider_tasks.append(run_analysis())
-
-                logger.info(f"[{provider_name}] Executing {len(provider_tasks)} analysis tasks concurrently...")
-                provider_results = await asyncio.gather(*provider_tasks)
-                all_results.extend(provider_results)
-
-            results = all_results
+            # Re-open the database safely to commit the trades now that networking implies are complete
+            from app.models.database import SessionLocal
+            db = SessionLocal()
             
             if not self.is_running:
                 logger.info("Bot execution manually stopped - aborting processing of decisions.")
@@ -287,10 +294,27 @@ class TradingBotService:
                 
             # Sequentially process results to safely write to SQLite avoiding locking errors
             for result in results:
-                decision = result["decision"]
-                symbol = result["symbol"]
-                provider_name = result["provider"]
-                error = result["error"]
+                raw_decision = result.get("decision")
+                
+                # Rehydrate trading decision from Celery JSON dictionary
+                decision = None
+                from app.models.schemas import TradingDecision, TradeActionEnum
+                if raw_decision and isinstance(raw_decision, dict):
+                    decision = TradingDecision(
+                        action=TradeActionEnum(raw_decision['action']),
+                        symbol=raw_decision['symbol'],
+                        quantity=raw_decision['quantity'],
+                        confidence=raw_decision['confidence'],
+                        reasoning=raw_decision['reasoning'],
+                        current_price=raw_decision['current_price']
+                    )
+                    decision.ai_provider = raw_decision.get('ai_provider')
+                elif raw_decision:
+                    decision = raw_decision
+                    
+                symbol = result.get("symbol")
+                provider_name = result.get("provider")
+                error = result.get("error")
                 
                 try:
                     if error == "timeout":

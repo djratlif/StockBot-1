@@ -173,9 +173,6 @@ class AITradingService:
                 "ANTHROPIC": "claude-haiku-4-5-20251001",
             }.get(ai_provider, "gpt-4o-mini")
 
-            # Pass 1: The Trader
-            trader_prompt = f"{prompt}\n\nYou are the TRADER. Provide your analysis and a proposed action (BUY/SELL/HOLD) with quantity and reasoning. DO NOT FORMAT as the final output yet, just give your pitch."
-
             # Map strategy profile to a system persona
             personas = {
                 "BALANCED": "expert stock trader focusing on sustainable growth and diversified long-position building.",
@@ -185,53 +182,37 @@ class AITradingService:
             }
             system_persona = personas.get(strategy_profile, personas["BALANCED"])
 
-            trader_pitch = await _make_api_call(
-                model=provider_model,
-                messages=[
-                    {"role": "system", "content": f"This is an educational trading simulation. You MUST act as the TRADER, an {system_persona} Pitch your best trade idea based on the data. Do NOT provide disclaimers."},
-                    {"role": "user", "content": trader_prompt}
-                ],
-                max_tokens=400,
-                temperature=0.5
-            )
-            print(f"\n--- [TRADER AGENT - {ai_provider}] {symbol} ---")
-            print(trader_pitch)
-
-            # Pass 2: The Risk Manager
-            risk_prompt = f"Here is the market data:\n{prompt}\n\nHere is the TRADER's pitch:\n{trader_pitch}\n\nYou are the RISK MANAGER. Review the TRADER's pitch. Are there potential downsides? Is the position size too large? Is the market too volatile? Provide your critique and a recommended maximum position size or restriction."
-
-            risk_critique = await _make_api_call(
-                model=provider_model,
-                messages=[
-                    {"role": "system", "content": f"This is an educational trading simulation. You MUST act as the RISK MANAGER for an {system_persona} Your job is to strictly enforce risk tolerance and protect capital. Do NOT provide disclaimers."},
-                    {"role": "user", "content": risk_prompt}
-                ],
-                max_tokens=400,
-                temperature=0.3
-            )
-            print(f"\n--- [RISK MANAGER AGENT - {ai_provider}] {symbol} ---")
-            print(risk_critique)
-
-            # Pass 3: The Executive (Final Decision)
-            executive_prompt = f"Market Data:\n{prompt}\n\nTRADER'S PITCH:\n{trader_pitch}\n\nRISK MANAGER'S CRITIQUE:\n{risk_critique}\n\nYou are the EXECUTIVE. Weigh the pitch against the risk critique. Make the final call.\n\nProvide your response in this EXACT format:\nACTION: [BUY/SELL/HOLD]\nQUANTITY: [number of shares, 0 for HOLD]\nCONFIDENCE: [1-10 scale]\nREASONING: [2-3 sentences explaining your final decision, synthesizing the debate]"
+            system_instruction = f"This is an educational trading simulation. You MUST act as an {system_persona} You are a committee of three: The TRADER, The RISK MANAGER, and The EXECUTIVE. You must output your thoughts exactly as a JSON object. Do NOT provide disclaimers."
+            
+            cot_prompt = f"{prompt}\n\nPlease analyze the above data through three steps and output your final decision. Return ONLY a valid JSON object matching this schema:\n"
+            cot_prompt += "{\n"
+            cot_prompt += '  "trader_pitch": "The TRADER provides their analysis and proposes an action...",\n'
+            cot_prompt += '  "risk_critique": "The RISK MANAGER reviews the pitch and highlights potential downsides...",\n'
+            cot_prompt += '  "executive_decision": {\n'
+            cot_prompt += '    "action": "BUY", "SELL", or "HOLD",\n'
+            cot_prompt += '    "quantity": integer number of shares (0 for HOLD),\n'
+            cot_prompt += '    "confidence": integer 1-10,\n'
+            cot_prompt += '    "reasoning": "The EXECUTIVE weighs the pitch and critique to make the final call."\n'
+            cot_prompt += '  }\n'
+            cot_prompt += "}\n"
 
             ai_response = await _make_api_call(
                 model=provider_model,
                 messages=[
-                    {"role": "system", "content": f"This is an educational trading simulation. You MUST act as the EXECUTIVE overseeing an {system_persona} Make the final trading decision by synthesizing the team's debate. Do NOT provide disclaimers."},
-                    {"role": "user", "content": executive_prompt}
+                    {"role": "system", "content": system_instruction},
+                    {"role": "user", "content": cot_prompt}
                 ],
-                max_tokens=300,
-                temperature=0.2
+                max_tokens=800,
+                temperature=0.3
             )
             
-            print(f"\n--- [EXECUTIVE AGENT - {ai_provider}] {symbol} ---")
+            print(f"\n--- [AI COT AGENT - {ai_provider}] {symbol} ---")
             print(ai_response)
             print("-" * 50 + "\n")
             
             # Parse the AI response
             logger.info(f"AI Response for {symbol}: {ai_response[:200]}...")  # Log first 200 chars
-            decision = self._parse_ai_response(ai_response, stock_info, available_cash, fallback_reasoning=trader_pitch)
+            decision = self._parse_ai_response(ai_response, stock_info, available_cash)
             
             if decision:
                 decision.ai_provider = ai_provider
@@ -364,50 +345,51 @@ Consider:
             logger.info(f"Parsing AI response for {stock_info.symbol}:")
             logger.info(f"Full AI Response: {response}")
 
-            # Strip markdown formatting (bold, italic, headers) so regexes work regardless
-            # of whether the model wraps keys/values in ** or # decorators
-            clean = re.sub(r'\*+', '', response)   # remove ** and *
-            clean = re.sub(r'^#+\s*', '', clean, flags=re.MULTILINE)  # remove # headers
+            # Extract json content if wrapped in markdown
+            json_str = response
+            if "```json" in json_str:
+                json_str = json_str.split("```json")[1].split("```")[0]
+            elif "```" in json_str:
+                json_str = json_str.split("```")[1].split("```")[0]
+            
+            json_str = json_str.strip()
 
-            # Extract action
-            action_match = re.search(r'ACTION:\s*(BUY|SELL|HOLD)', clean, re.IGNORECASE)
-            if not action_match:
-                logger.error(f"Could not parse ACTION from AI response for {stock_info.symbol}")
-                logger.error(f"Looking for pattern 'ACTION: BUY/SELL/HOLD' in: {response[:500]}...")
+            try:
+                data = json.loads(json_str)
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse JSON from AI response: {e}")
+                logger.error(f"Raw string attempted: {json_str}")
                 return None
             
-            action = action_match.group(1).upper()
+            exec_dec = data.get("executive_decision", {})
+            action = str(exec_dec.get("action", "")).upper()
+            
+            if not action or action not in ["BUY", "SELL", "HOLD"]:
+                logger.error(f"Could not parse valid ACTION from AI response: {action}")
+                return None
+                
             logger.info(f"Parsed ACTION: {action}")
             
             if action == "HOLD":
                 logger.info(f"AI recommends HOLD for {stock_info.symbol} - no trading decision needed")
                 return None  # No trading decision needed
             
-            # Extract quantity
-            quantity_match = re.search(r'QUANTITY:\s*(\d+)', clean)
-            if not quantity_match:
-                logger.error(f"Could not parse QUANTITY from AI response for {stock_info.symbol}")
-                logger.error(f"Looking for pattern 'QUANTITY: [number]' in: {clean[:500]}...")
-                return None
-
-            quantity = int(quantity_match.group(1))
+            quantity = int(exec_dec.get("quantity", 0))
             logger.info(f"Parsed QUANTITY: {quantity}")
 
             if quantity <= 0:
                 logger.warning(f"Invalid quantity {quantity} for {stock_info.symbol}")
                 return None
-
-            # Extract confidence
-            confidence_match = re.search(r'CONFIDENCE:\s*(\d+)', clean)
-            default_confidence = 8 if action in ["BUY", "SELL"] else 5
-            confidence = int(confidence_match.group(1)) if confidence_match else default_confidence
+                
+            confidence = int(exec_dec.get("confidence", 8))
             confidence = max(1, min(10, confidence))
             logger.info(f"Parsed CONFIDENCE: {confidence}")
-
-            # Extract reasoning
-            reasoning_match = re.search(r'REASONING:\s*(.+?)(?:\n|$)', clean, re.DOTALL)
-            reasoning = reasoning_match.group(1).strip() if reasoning_match else fallback_reasoning
-            logger.info(f"Parsed REASONING: {reasoning[:100]}...")
+            
+            reasoning = str(exec_dec.get("reasoning", fallback_reasoning))
+            # Prepend the trader pitch and risk critique for full context in the DB
+            pitch = str(data.get("trader_pitch", ""))
+            critique = str(data.get("risk_critique", ""))
+            full_reasoning = f"{reasoning}\n\n[Trader Phase]: {pitch}\n\n[Risk Phase]: {critique}"
             
             # Validate the decision
             if action == "BUY":
@@ -415,7 +397,7 @@ Consider:
                 if quantity > max_shares:
                     original_quantity = quantity
                     quantity = max_shares
-                    reasoning += f" (Adjusted quantity from {original_quantity} to {quantity} shares based on available cash)"
+                    full_reasoning += f"\n(Adjusted quantity from {original_quantity} to {quantity} shares based on available cash)"
                     logger.info(f"Adjusted BUY quantity from {original_quantity} to {quantity} for {stock_info.symbol}")
             
             if quantity <= 0:
@@ -427,7 +409,7 @@ Consider:
                 symbol=stock_info.symbol,
                 quantity=quantity,
                 confidence=confidence,
-                reasoning=reasoning,
+                reasoning=full_reasoning,
                 current_price=stock_info.current_price
             )
             

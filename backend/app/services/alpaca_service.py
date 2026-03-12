@@ -3,6 +3,8 @@ from typing import Optional, Dict, List, Any
 from datetime import datetime, timedelta
 import pandas as pd
 import pytz
+import json
+import redis
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockLatestQuoteRequest, StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
@@ -33,6 +35,15 @@ class AlpacaService:
         self.trading_client = TradingClient(self.api_key, self.secret_key, paper=True) # Force paper for now as requested
         self.data_client = StockHistoricalDataClient(self.api_key, self.secret_key)
         
+        # Setup Redis Caching
+        try:
+            redis_url = getattr(settings, 'redis_url', 'redis://localhost:6379/0')
+            self.redis_client = redis.Redis.from_url(redis_url, decode_responses=True)
+            self.redis_client.ping()
+        except Exception as e:
+            logger.warning(f"AlpacaService failed to connect to Redis for caching: {e}")
+            self.redis_client = None
+
         # Cache for market status
         self.market_status_cache = None
         self.market_status_last_updated = None
@@ -145,6 +156,16 @@ class AlpacaService:
             else:
                 start_time = now - timedelta(days=30)
             
+            # Check Redis cache first
+            cache_key = f"alpaca_hist_v1_{symbol}_{period}"
+            if self.redis_client:
+                try:
+                    cached_data = self.redis_client.get(cache_key)
+                    if cached_data:
+                        return json.loads(cached_data)
+                except Exception as e:
+                    logger.warning(f"Redis cache read error for {symbol}: {e}")
+
             request = StockBarsRequest(
                 symbol_or_symbols=symbol,
                 timeframe=timeframe,
@@ -171,6 +192,13 @@ class AlpacaService:
                         "4. close": str(row['close']),
                         "5. volume": str(row['volume'])
                     }
+                    
+            # Cache the result for 1 hour
+            if self.redis_client and result:
+                try:
+                    self.redis_client.setex(cache_key, 3600, json.dumps(result))
+                except Exception as e:
+                    logger.warning(f"Redis cache write error for {symbol}: {e}")
                     
             return result
             

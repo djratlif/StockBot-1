@@ -58,3 +58,90 @@ def execute_trading_cycle():
         raise e
     finally:
         db.close()
+
+@celery_app.task(name='analyze_single_stock_task')
+def analyze_single_stock_task(
+    provider_name, provider_api_key, symbol,
+    usable_cash, allocation_exceeded, allocation_overage,
+    portfolio_total_value, risk_tolerance_value, strategy_profile,
+    max_position_size, current_holdings
+):
+    """Background task to analyze a single stock with a specific AI provider"""
+    from app.services.ai_service import ai_service
+    from app.services.stock_service import stock_service
+    from app.models.database import SessionLocal
+    from app.models.models import RiskTolerance, ActivityLog
+    
+    est = pytz.timezone('US/Eastern')
+    
+    # We must open a DB session to log the exact API Request, and then close it
+    db = SessionLocal()
+    try:
+        try:
+            db.add(ActivityLog(
+                action=f"{provider_name}_API_REQUEST",
+                details=f"[{provider_name}] External API Request: Analyzing {symbol}",
+                timestamp=datetime.now(est)
+            ))
+            db.commit()
+        except Exception:
+            pass
+    finally:
+        db.close()
+
+    async def _run_analysis():
+        # Re-fetch is instantaneous because Alpaca is cached in Redis
+        info = await stock_service.get_stock_info(symbol)
+        if isinstance(info, dict):
+            from app.models.schemas import StockInfo
+            info = StockInfo(**info)
+            
+        history = await stock_service.get_historical_data(symbol, period="1mo")
+        news = await stock_service.fetch_news(symbol, limit=3)
+
+        decision = await asyncio.wait_for(
+            ai_service.analyze_stock_for_trading(
+                symbol=symbol,
+                portfolio_cash=usable_cash,
+                current_holdings=current_holdings,
+                portfolio_value=portfolio_total_value,
+                risk_tolerance=RiskTolerance(risk_tolerance_value),
+                strategy_profile=strategy_profile,
+                recent_news=news,
+                max_position_size=max_position_size,
+                allocation_exceeded=allocation_exceeded,
+                allocation_overage=allocation_overage,
+                db_session=None,
+                ai_provider=provider_name,
+                api_key=provider_api_key,
+                pre_fetched_info=info,
+                pre_fetched_history=history
+            ),
+            timeout=90.0
+        )
+        
+        if decision:
+            return {
+                "decision": {
+                    "action": decision.action.value,
+                    "symbol": decision.symbol,
+                    "quantity": decision.quantity,
+                    "confidence": decision.confidence,
+                    "reasoning": decision.reasoning,
+                    "current_price": decision.current_price,
+                    "ai_provider": decision.ai_provider
+                },
+                "symbol": symbol,
+                "provider": provider_name,
+                "error": None
+            }
+        else:
+            return {"decision": None, "symbol": symbol, "provider": provider_name, "error": "No decision parsed"}
+
+    try:
+        return run_async(_run_analysis())
+    except asyncio.TimeoutError:
+        return {"decision": None, "symbol": symbol, "provider": provider_name, "error": "timeout"}
+    except Exception as e:
+        logger.error(f"Error in analyze_single_stock_task {symbol}: {e}")
+        return {"decision": None, "symbol": symbol, "provider": provider_name, "error": str(e)}

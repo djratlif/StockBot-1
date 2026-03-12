@@ -329,7 +329,7 @@ async def get_system_status(db: Session = Depends(get_db)):
         # Test Stock API
         try:
             stock_service = StockService()
-            test_price = stock_service.get_current_price("AAPL")
+            test_price = await stock_service.get_current_price("AAPL")
             status["stock_api_working"] = test_price is not None
         except Exception as e:
             status["stock_api_working"] = False
