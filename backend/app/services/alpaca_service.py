@@ -2,6 +2,7 @@ import logging
 from typing import Optional, Dict, List, Any
 from datetime import datetime, timedelta
 import pandas as pd
+import pytz
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockLatestQuoteRequest, StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
@@ -244,11 +245,12 @@ class AlpacaService:
              
         try:
             clock = self.trading_client.get_clock()
+            est = pytz.timezone('US/Eastern')
             return {
                 "is_open": clock.is_open,
-                "next_open": clock.next_open.strftime("%Y-%m-%d %H:%M:%S EST"),
-                "next_close": clock.next_close.strftime("%Y-%m-%d %H:%M:%S EST"),
-                "current_time": clock.timestamp.strftime("%H:%M:%S EST")
+                "next_open": clock.next_open.astimezone(est).strftime("%Y-%m-%d %H:%M:%S %Z"),
+                "next_close": clock.next_close.astimezone(est).strftime("%Y-%m-%d %H:%M:%S %Z"),
+                "current_time": clock.timestamp.astimezone(est).strftime("%H:%M:%S %Z")
             }
         except Exception as e:
             logger.error(f"Error getting market status: {str(e)}")

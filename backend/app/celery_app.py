@@ -1,6 +1,7 @@
 from celery import Celery
 import os
 from dotenv import load_dotenv
+from app.config import settings
 
 load_dotenv()
 
@@ -23,5 +24,5 @@ celery_app.conf.update(
     enable_utc=True,
     task_track_started=True,
     task_time_limit=300,  # 5 minutes max per task
-    task_always_eager=True,  # Run tasks synchronously without a broker
+    task_always_eager=settings.environment.lower() != 'production',  # Run tasks synchronously locally, async in prod
 )

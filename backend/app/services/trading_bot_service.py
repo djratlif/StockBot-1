@@ -114,7 +114,7 @@ class TradingBotService:
             from app.services.alpaca_service import alpaca_service as _alpaca
             account = _alpaca.get_account()
             if account:
-                portfolio.cash_balance = float(account.cash)
+                portfolio.cash_balance = float(account.non_marginable_buying_power)
                 portfolio.total_value = float(account.equity)
                 db.commit()
                 
@@ -236,6 +236,17 @@ class TradingBotService:
 
                     async def run_analysis(p_name=provider_name, p_key=provider_api_key, sym=symbol, s_data=stock_data, p_hold=provider_holdings, u_cash=usable_cash, a_exceed=allocation_exceeded, a_over=allocation_overage, p_val=portfolio.total_value):
                         try:
+                            # Explicitly log the API request
+                            try:
+                                db.add(ActivityLog(
+                                    action=f"{p_name}_API_REQUEST",
+                                    details=f"[{p_name}] External API Request: Analyzing {sym}",
+                                    timestamp=datetime.now(self.est)
+                                ))
+                                db.commit()
+                            except Exception:
+                                pass
+
                             decision = await asyncio.wait_for(
                                 ai_service.analyze_stock_for_trading(
                                     symbol=sym,

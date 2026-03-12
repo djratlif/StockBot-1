@@ -9,7 +9,7 @@ import logging
 from datetime import datetime, timedelta
 
 from app.models.database import get_db
-from app.models.models import TradingLog, ActivityLog
+from app.models.models import TradingLog, ActivityLog, Trades
 from app.models.schemas import APIResponse
 
 logger = logging.getLogger(__name__)
@@ -182,6 +182,11 @@ async def get_debug_info(
             TradingLog.timestamp.desc()
         ).limit(limit//2).all()
         
+        # Get actual Trades history natively for the trades tab
+        actual_trades = db.query(Trades).order_by(
+            Trades.executed_at.desc()
+        ).limit(limit//2).all()
+        
         # EST timezone for formatting
         est = pytz.timezone('US/Eastern')
         
@@ -195,14 +200,14 @@ async def get_debug_info(
             "trades": []
         }
         
-        # Helper function to format timestamp to EST
+        # Helper function to format timestamp to US/Eastern
         def format_timestamp_est(timestamp):
             if timestamp.tzinfo is None:
                 # If timestamp is naive, assume it's UTC
                 timestamp = pytz.utc.localize(timestamp)
-            # Convert to EST
+            # Convert to US/Eastern time (handles DST changing automatically to EDT or EST)
             est_time = timestamp.astimezone(est)
-            return est_time.strftime("%Y-%m-%d %H:%M:%S EST")
+            return est_time.strftime("%Y-%m-%d %H:%M:%S %Z")
         
         # Process activity logs
         for log in activity_logs:
@@ -214,6 +219,30 @@ async def get_debug_info(
                 "type": "activity"
             }
             debug_info["recent_activity"].append(activity_data)
+
+            # Explicitly route important Activity strings into Warnings tab
+            if any(keyword in log.details.lower() for keyword in ["block", "timeout", "fail", "low_confidence", "error"]):
+                debug_info["warnings"].append({
+                    "id": log.id,
+                    "timestamp": format_timestamp_est(log.timestamp),
+                    "level": "WARNING",
+                    "message": log.details,
+                    "symbol": "SYSTEM",
+                    "trade_id": None,
+                    "type": "trading"
+                })
+
+            # Explicitly route actual HTTP requests into API Calls tab
+            if any(keyword in log.action.lower() or keyword in log.details.lower() for keyword in ["api", "request", "rate limit"]):
+                debug_info["api_calls"].append({
+                    "id": log.id,
+                    "timestamp": format_timestamp_est(log.timestamp),
+                    "level": "INFO",
+                    "message": log.details,
+                    "symbol": "SYSTEM",
+                    "trade_id": None,
+                    "type": "trading"
+                })
         
         # Process trading logs
         for log in trading_logs:
@@ -234,18 +263,31 @@ async def get_debug_info(
             elif log.level == "INFO":
                 debug_info["info"].append(log_data)
             
-            # Check for API-related messages
             if any(keyword in log.message.lower() for keyword in ["api", "rate limit", "quota", "request"]):
                 debug_info["api_calls"].append(log_data)
-            
-            # Check for trade-related messages
-            if log.trade_id or any(keyword in log.message.lower() for keyword in ["trade", "buy", "sell", "order"]):
-                debug_info["trades"].append(log_data)
         
+        # Process actual database executed Trades strictly into the Trades tab and Info list
+        for trade in actual_trades:
+            provider = trade.ai_provider or "OPENAI"
+            trade_data = {
+                "id": f"trade_{trade.id}",
+                "timestamp": format_timestamp_est(trade.executed_at),
+                "level": "SUCCESS" if trade.action.value == "BUY" else "INFO",
+                "message": f"[{provider}] {trade.action.value} {trade.quantity} shares of {trade.symbol} at ${trade.price:.2f}",
+                "symbol": trade.symbol,
+                "trade_id": trade.id,
+                "type": "trading"
+            }
+            debug_info["trades"].append(trade_data)
+            
+            # Since these are verified transactions safely tracked by the DB, we merge them into INFO 
+            # to guarantee they elegantly appear chronologically in the 'All Logs' tab
+            debug_info["info"].append(trade_data)
+            
         # Add summary statistics
         debug_info["summary"] = {
             "total_activity_logs": len(activity_logs),
-            "total_trading_logs": len(trading_logs),
+            "total_trading_logs": len(trading_logs) + len(actual_trades),
             "error_count": len(debug_info["errors"]),
             "warning_count": len(debug_info["warnings"]),
             "info_count": len(debug_info["info"]),

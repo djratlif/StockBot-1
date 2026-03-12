@@ -53,6 +53,7 @@ async def get_current_user(
     if getattr(user, 'is_read_only', False) and getattr(user, 'linked_user_id', None):
         primary_user = auth_service.get_user_by_id(db, user_id=user.linked_user_id)
         if primary_user:
+            db.expunge(primary_user)
             primary_user.is_read_only_session = True
             primary_user.is_read_only = True
             return primary_user
@@ -115,6 +116,7 @@ def get_optional_current_user(
         if getattr(user, 'is_read_only', False) and getattr(user, 'linked_user_id', None):
             primary_user = auth_service.get_user_by_id(db, user_id=user.linked_user_id)
             if primary_user:
+                db.expunge(primary_user)
                 primary_user.is_read_only_session = True
                 primary_user.is_read_only = True
                 return primary_user

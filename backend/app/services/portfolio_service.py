@@ -31,7 +31,7 @@ class PortfolioService:
             
             if account:
                 current_equity = float(account.equity)
-                cash_balance = float(account.cash)
+                cash_balance = float(account.non_marginable_buying_power)
             else:
                 logger.warning("Could not fetch Alpaca account, using default/local values")
             
@@ -75,7 +75,7 @@ class PortfolioService:
             if account:
                 # Updates local portfolio record to match Alpaca
                 previous_value = portfolio.total_value
-                portfolio.cash_balance = float(account.cash)
+                portfolio.cash_balance = float(account.non_marginable_buying_power)
                 portfolio.total_value = float(account.equity)
                 
                 # Log significant changes

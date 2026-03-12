@@ -146,8 +146,9 @@ async def get_intraday_performance(db: Session = Depends(get_db)):
 
         today = date.today()
         start_of_day = datetime.combine(today, datetime.min.time())
-        start_naive = start_of_day.replace(tzinfo=None)
-        now_time = datetime.now().strftime("%H:%M:%S")
+        est = pytz.timezone("US/Eastern")
+        start_utc = pytz.utc.localize(start_of_day)
+        now_time = datetime.now(pytz.utc).astimezone(est).strftime("%H:%M:%S")
 
         providers = ["OPENAI", "GEMINI", "ANTHROPIC"]
 
@@ -184,17 +185,15 @@ async def get_intraday_performance(db: Session = Depends(get_db)):
                         profit += (trade.price - buy["price"]) * qty
                         buy["qty"] -= qty
                         qty = 0
-                exec_naive = trade.executed_at.replace(tzinfo=None) if trade.executed_at else None
-                if exec_naive and exec_naive >= start_naive:
+                exec_local = trade.executed_at.replace(tzinfo=pytz.utc).astimezone(est) if trade.executed_at else None
+                if exec_local and trade.executed_at >= start_utc:
                     cumulative[p] += profit
                     series[p].append({
-                        "time": exec_naive.strftime("%H:%M:%S"),
+                        "time": exec_local.strftime("%H:%M:%S"),
                         "cumulative_pnl": round(cumulative[p], 2)
                     })
 
         # ── Total P&L series: from PortfolioSnapshot (fluctuates with prices) ──
-        est = pytz.timezone("US/Eastern")
-        start_utc = pytz.utc.localize(start_of_day)
         snapshots = (
             db.query(PortfolioSnapshot)
             .filter(PortfolioSnapshot.snapshot_at >= start_utc)
