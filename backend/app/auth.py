@@ -55,7 +55,6 @@ async def get_current_user(
         if primary_user:
             db.expunge(primary_user)
             primary_user.is_read_only_session = True
-            primary_user.is_read_only = True
             return primary_user
             
     user.is_read_only_session = False
@@ -118,7 +117,6 @@ def get_optional_current_user(
             if primary_user:
                 db.expunge(primary_user)
                 primary_user.is_read_only_session = True
-                primary_user.is_read_only = True
                 return primary_user
                 
         user.is_read_only_session = False

@@ -243,7 +243,49 @@ async def get_intraday_performance(db: Session = Depends(get_db)):
         logger.error(f"Error getting intraday performance: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-
+@router.get("/performance/historical-pnl")
+async def get_historical_pnl(db: Session = Depends(get_db)):
+    """Get 30-day historical PnL for each AI provider"""
+    try:
+        from app.models.models import PortfolioSnapshot
+        from sqlalchemy import func, desc
+        import pytz
+        from datetime import datetime, timedelta
+        
+        est = pytz.timezone('US/Eastern')
+        thirty_days_ago = datetime.now(est) - timedelta(days=30)
+        
+        # We want the LAST snapshot for each provider for each day.
+        snapshots = db.query(PortfolioSnapshot).filter(
+            PortfolioSnapshot.snapshot_at >= thirty_days_ago
+        ).order_by(PortfolioSnapshot.snapshot_at.asc()).all()
+        
+        # Aggregate by date and provider, taking the latest one for each day
+        daily_pnl = {}
+        for snap in snapshots:
+            # Convert to EST for accurate daily boundaries
+            dt_est = snap.snapshot_at.astimezone(est) if snap.snapshot_at.tzinfo else est.localize(snap.snapshot_at)
+            date_str = dt_est.strftime("%b %d") # e.g. "Mar 13"
+            
+            if date_str not in daily_pnl:
+                daily_pnl[date_str] = {}
+            daily_pnl[date_str][snap.ai_provider] = snap.total_pnl
+            daily_pnl[date_str]["sort_key"] = dt_est.date()
+            
+        # Format for recharts:
+        # [ { name: 'Mar 13', OPENAI: 400, GEMINI: 200, ANTHROPIC: 100 }, ... ]
+        chart_data = []
+        for date_str, data in sorted(daily_pnl.items(), key=lambda x: x[1]["sort_key"]):
+            entry = {"date": date_str}
+            for provider, pnl in data.items():
+                if provider != "sort_key":
+                    entry[provider] = pnl
+            chart_data.append(entry)
+            
+        return chart_data
+    except Exception as e:
+        logger.error(f"Error getting historical PnL: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/performance/daily")
 async def get_daily_performance(db: Session = Depends(get_db)):

@@ -717,13 +717,45 @@ class PortfolioService:
             for st in summarized_trades:
                 st["price"] = st["total_amount"] / st["quantity"] if st["quantity"] > 0 else 0
 
+            # --- 7-DAY ROLLING TREND ---
+            from app.models.models import PortfolioSnapshot
+            from datetime import timedelta
+            import pytz
+            
+            est = pytz.timezone('US/Eastern')
+            seven_days_ago = datetime.now(est) - timedelta(days=7)
+            
+            snapshots = db.query(PortfolioSnapshot).filter(
+                PortfolioSnapshot.snapshot_at >= seven_days_ago
+            ).order_by(PortfolioSnapshot.snapshot_at.asc()).all()
+            
+            daily_trend = {}
+            for snap in snapshots:
+                dt_est = snap.snapshot_at.astimezone(est) if snap.snapshot_at.tzinfo else est.localize(snap.snapshot_at)
+                d_str = dt_est.strftime("%a, %b %d") # "Mon, Mar 10"
+                if d_str not in daily_trend:
+                    daily_trend[d_str] = {"sort_key": dt_est.date()}
+                daily_trend[d_str][snap.ai_provider] = snap.total_pnl
+                
+            trend_list = []
+            for d_str, data in sorted(daily_trend.items(), key=lambda x: x[1]["sort_key"]):
+                # Skip today since the whole email is about today
+                if data["sort_key"] == today:
+                    continue
+                day_total = sum(v for k,v in data.items() if k != "sort_key")
+                trend_list.append({
+                    "date": d_str,
+                    "pnl": day_total
+                })
+                
             return {
                 "date": today.strftime("%Y-%m-%d"),
                 "models": list(model_stats.values()),
                 "trades": summarized_trades,
                 "portfolio_value": portfolio_value,
                 "daily_pnl": actual_daily_pnl,
-                "daily_pnl_percent": calculated_daily_pnl_percent
+                "daily_pnl_percent": calculated_daily_pnl_percent,
+                "seven_day_trend": trend_list[-7:] # Ensure we only grab the last 7 if there's slightly more
             }
         except Exception as e:
             logger.error(f"Error calculating daily report data: {str(e)}")

@@ -94,7 +94,10 @@ async def get_current_user_info(
     """
     Get current authenticated user information
     """
-    return UserResponse.from_orm(current_user)
+    response = UserResponse.from_orm(current_user)
+    if getattr(current_user, 'is_read_only_session', False):
+        response.is_read_only = True
+    return response
 
 
 @router.post("/logout")

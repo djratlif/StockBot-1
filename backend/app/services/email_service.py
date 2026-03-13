@@ -36,8 +36,28 @@ class EmailService:
                             {overall_pnl_sign}${abs(daily_pnl):,.2f} ({overall_pnl_sign}{daily_pnl_percent:.2f}%) Today
                         </p>
                     </div>
-                    
-                    <h3 style="border-bottom: 2px solid #1976d2; padding-bottom: 5px; color: #1976d2;">AI Model Leaderboard</h3>
+            """
+        
+        seven_day_trend = data.get("seven_day_trend", [])
+        if seven_day_trend:
+            html += """
+                    <h3 style="border-bottom: 2px solid #1976d2; padding-bottom: 5px; color: #1976d2; margin-top: 25px;">7-Day Performance Trend</h3>
+                    <div style="background-color: #fafafa; padding: 10px; border-radius: 8px; margin-bottom: 20px; text-align: center; border: 1px solid #eee;">
+            """
+            for day in seven_day_trend:
+                pnl = day.get("pnl", 0.0)
+                c = "green" if pnl >= 0 else "red"
+                sign = "+" if pnl >= 0 else ""
+                html += f"""
+                        <div style="display: inline-block; margin: 5px 10px; padding: 8px 12px; background-color: white; border: 1px solid #ddd; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                            <div style="font-size: 12px; color: #666; margin-bottom: 4px;">{day['date']}</div>
+                            <div style="font-size: 14px; font-weight: bold; color: {c};">{sign}${pnl:.2f}</div>
+                        </div>
+                """
+            html += "</div>"
+
+        html += """
+                    <h3 style="border-bottom: 2px solid #1976d2; padding-bottom: 5px; color: #1976d2; margin-top: 25px;">AI Model Leaderboard</h3>
         """
         
         colors = {"OPENAI": "#1976d2", "GEMINI": "#dc004e", "ANTHROPIC": "#ed6c02"}

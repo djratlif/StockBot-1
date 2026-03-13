@@ -206,6 +206,13 @@ export interface IntradayPerformance {
   now_time: string;
 }
 
+export interface HistoricalPnLPoint {
+  date: string;
+  OPENAI?: number;
+  GEMINI?: number;
+  ANTHROPIC?: number;
+}
+
 // Portfolio API
 export const portfolioAPI = {
   getPortfolio: (): Promise<Portfolio> =>
@@ -304,6 +311,8 @@ export const tradesAPI = {
   getIntradayPerformance: (): Promise<IntradayPerformance> =>
     api.get('/api/trades/performance/intraday').then(res => res.data),
 
+  getHistoricalPnL: (): Promise<HistoricalPnLPoint[]> =>
+    api.get('/api/trades/performance/historical-pnl').then(res => res.data),
 };
 
 // Logs API

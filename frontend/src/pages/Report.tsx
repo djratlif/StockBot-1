@@ -16,6 +16,7 @@ import {
     Chip,
     Alert
 } from '@mui/material';
+import HistoricalPerformanceChart from '../components/HistoricalPerformanceChart';
 import { portfolioAPI, DailyReport } from '../services/api';
 
 const Report: React.FC = () => {
@@ -69,6 +70,13 @@ const Report: React.FC = () => {
             <Typography variant="subtitle1" color="textSecondary" gutterBottom>
                 Trades and AI model performance for {report.date}
             </Typography>
+
+            <Typography variant="h5" sx={{ mt: 2, mb: 2 }}>
+                30-Day Performance History
+            </Typography>
+            <Paper sx={{ p: 2, mb: 4 }}>
+                <HistoricalPerformanceChart />
+            </Paper>
 
             <Typography variant="h5" sx={{ mt: 4, mb: 2 }}>
                 AI Model Leaderboard
@@ -187,7 +195,7 @@ const Report: React.FC = () => {
                     </TableBody>
                 </Table>
             </TableContainer>
-        </Box>
+        </Box >
     );
 };
 
