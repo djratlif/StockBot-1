@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import axios from 'axios';
+import api from '../services/api';
 
 interface User {
   id: number;
@@ -40,22 +40,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const isAuthenticated = !!user && !!token;
 
-  // Set up axios interceptor for authentication
-  useEffect(() => {
-    const interceptor = axios.interceptors.request.use(
-      (config) => {
-        if (token) {
-          config.headers.Authorization = `Bearer ${token}`;
-        }
-        return config;
-      },
-      (error) => {
-        return Promise.reject(error);
-      }
-    );
+  const logout = React.useCallback((): void => {
+    setUser(null);
+    setToken(null);
+    setIsUnauthorized(false);
+    localStorage.removeItem('token');
+  }, []);
 
-    // Response interceptor to handle 401 errors
-    const responseInterceptor = axios.interceptors.response.use(
+  // Response interceptor to handle 401 errors globally across the app
+  useEffect(() => {
+    const responseInterceptor = api.interceptors.response.use(
       (response) => response,
       (error) => {
         if (error.response?.status === 401) {
@@ -66,16 +60,47 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     );
 
     return () => {
-      axios.interceptors.request.eject(interceptor);
-      axios.interceptors.response.eject(responseInterceptor);
+      api.interceptors.response.eject(responseInterceptor);
     };
-  }, [token]);
+  }, [logout]);
+
+  // Inactivity timeout watcher
+  useEffect(() => {
+    let timeoutId: NodeJS.Timeout;
+
+    const resetTimeout = () => {
+      clearTimeout(timeoutId);
+      // Standard 30 minute inactivity timeout
+      timeoutId = setTimeout(() => {
+        if (token) {
+          console.warn('Session expired due to inactivity');
+          logout();
+        }
+      }, 30 * 60 * 1000);
+    };
+
+    if (token) {
+      resetTimeout();
+      window.addEventListener('mousemove', resetTimeout);
+      window.addEventListener('keydown', resetTimeout);
+      window.addEventListener('scroll', resetTimeout);
+      window.addEventListener('click', resetTimeout);
+    }
+
+    return () => {
+      clearTimeout(timeoutId);
+      window.removeEventListener('mousemove', resetTimeout);
+      window.removeEventListener('keydown', resetTimeout);
+      window.removeEventListener('scroll', resetTimeout);
+      window.removeEventListener('click', resetTimeout);
+    };
+  }, [token, logout]);
 
   const login = async (googleToken: string): Promise<void> => {
     try {
       setIsLoading(true);
       setIsUnauthorized(false);
-      const response = await axios.post(`${process.env.REACT_APP_API_BASE_URL}/api/auth/google`, {
+      const response = await api.post('/api/auth/google', {
         token: googleToken
       });
 
@@ -99,7 +124,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       setIsLoading(true);
       setIsUnauthorized(false);
-      const response = await axios.post(`${process.env.REACT_APP_API_BASE_URL}/api/auth/google-oauth2`, {
+      const response = await api.post('/api/auth/google-oauth2', {
         google_id: userInfo.id,
         email: userInfo.email,
         name: userInfo.name,
@@ -122,12 +147,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  const logout = (): void => {
-    setUser(null);
-    setToken(null);
-    setIsUnauthorized(false);
-    localStorage.removeItem('token');
-  };
+
 
   const clearUnauthorized = (): void => {
     setIsUnauthorized(false);
@@ -140,11 +160,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
 
     try {
-      const response = await axios.get(`${process.env.REACT_APP_API_BASE_URL}/api/auth/me`, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      });
+      const response = await api.get('/api/auth/me');
 
       setUser(response.data);
     } catch (error) {
