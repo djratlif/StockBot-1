@@ -229,7 +229,7 @@ const Debug: React.FC = () => {
               <Card>
                 <CardContent>
                   <Typography variant="subtitle2" color="textSecondary">
-                    OpenAI API
+                    GPT-4o Mini API
                   </Typography>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     {systemStatus.openai_api_configured ? (
@@ -247,7 +247,7 @@ const Debug: React.FC = () => {
               <Card>
                 <CardContent>
                   <Typography variant="subtitle2" color="textSecondary">
-                    Gemini API
+                    Gemini 2.5 Flash API
                   </Typography>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     {systemStatus.gemini_api_configured ? (
@@ -265,7 +265,7 @@ const Debug: React.FC = () => {
               <Card>
                 <CardContent>
                   <Typography variant="subtitle2" color="textSecondary">
-                    Anthropic API
+                    Claude 3.5 Haiku API
                   </Typography>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     {systemStatus.anthropic_api_configured ? (

@@ -11,7 +11,7 @@ from alpaca.data.timeframe import TimeFrame
 from alpaca.data.enums import DataFeed
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import MarketOrderRequest, GetOrdersRequest
-from alpaca.trading.enums import OrderSide, TimeInForce, OrderStatus
+from alpaca.trading.enums import OrderSide, TimeInForce, QueryOrderStatus
 from alpaca.common.exceptions import APIError
 
 from app.config import settings
@@ -231,7 +231,7 @@ class AlpacaService:
         if not self.trading_client:
             return []
         try:
-            req_status = OrderStatus.OPEN if status.lower() == 'open' else OrderStatus.CLOSED
+            req_status = QueryOrderStatus.OPEN if status.lower() == 'open' else QueryOrderStatus.CLOSED
             request = GetOrdersRequest(status=req_status)
             return self.trading_client.get_orders(filter=request)
         except Exception as e:

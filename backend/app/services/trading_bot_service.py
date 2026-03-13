@@ -234,11 +234,17 @@ class TradingBotService:
                 allocation_overage = invested - allocated_limit if allocation_exceeded else 0.0
                 usable_cash = min(portfolio.cash_balance, max(0.0, allocated_limit - invested))
 
+                display_name = {
+                    "OPENAI": "GPT-4o Mini",
+                    "GEMINI": "Gemini 2.5 Flash",
+                    "ANTHROPIC": "Claude 3.5 Haiku"
+                }.get(provider_name, provider_name)
+
                 try:
                     status_msg = f"OVER LIMIT by ${allocation_overage:,.2f} — bot will only SELL" if allocation_exceeded else f"usable cash: ${usable_cash:,.2f}"
                     cycle_log = ActivityLog(
                         action=f"{provider_name}_ANALYSIS_CYCLE",
-                        details=f"[{provider_name}] Fanning out {len(stocks_to_analyze)} stocks to queue | Allocated: ${allocated_limit:,.2f} | Invested: ${invested:,.2f} | {status_msg}",
+                        details=f"[{display_name}] Fanning out {len(stocks_to_analyze)} stocks to queue | Allocated: ${allocated_limit:,.2f} | Invested: ${invested:,.2f} | {status_msg}",
                         timestamp=datetime.now(self.est)
                     )
                     db.add(cycle_log)
@@ -251,6 +257,10 @@ class TradingBotService:
                         logger.warning(f"Skipping {symbol} due to missing pre-fetched market data.")
                         continue
                     
+                    # Ensure strategy_profile is a string to pass via Celery Redis JSON
+                    strat_prof = getattr(config, 'strategy_profile', 'BALANCED')
+                    strat_prof_str = strat_prof.value if hasattr(strat_prof, 'value') else str(strat_prof)
+
                     # Append the micro-task to the massive parallel execution array
                     task_signatures.append(
                         analyze_single_stock_task.s(
@@ -260,9 +270,9 @@ class TradingBotService:
                             usable_cash,
                             allocation_exceeded,
                             allocation_overage,
-                            portfolio.total_value,
+                            allocated_limit,
                             config.risk_tolerance.value,
-                            getattr(config, 'strategy_profile', 'BALANCED'),
+                            strat_prof_str,
                             config.max_position_size,
                             provider_holdings
                         )
@@ -277,10 +287,12 @@ class TradingBotService:
             if task_signatures:
                 logger.info(f"Fanning out {len(task_signatures)} AI network tasks to Celery...")
                 try:
+                    from celery.result import allow_join_result
                     job = group(task_signatures)
                     celery_result = job.apply_async()
                     # Hang the orchestrator thread securely until all background APIs resolve
-                    results = celery_result.get(timeout=300) 
+                    with allow_join_result():
+                        results = celery_result.get(timeout=300) 
                 except Exception as e:
                     logger.error(f"Celery group execution failed: {e}")
 

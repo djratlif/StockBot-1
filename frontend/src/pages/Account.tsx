@@ -138,7 +138,7 @@ const Account: React.FC = () => {
                     <Grid container spacing={4}>
                         {/* OpenAI */}
                         <Grid item xs={12}>
-                            <Typography variant="subtitle1" fontWeight="bold" mb={1}>OpenAI (ChatGPT)</Typography>
+                            <Typography variant="subtitle1" fontWeight="bold" mb={1}>GPT-4o Mini</Typography>
                             <TextField
                                 fullWidth
                                 placeholder="sk-..."
@@ -153,14 +153,14 @@ const Account: React.FC = () => {
                         {/* Google Gemini */}
                         <Grid item xs={12}>
                             <Divider sx={{ my: 2 }} />
-                            <Typography variant="subtitle1" fontWeight="bold" mb={1}>Google Gemini</Typography>
+                            <Typography variant="subtitle1" fontWeight="bold" mb={1}>Gemini 2.5 Flash</Typography>
                             <TextField
                                 fullWidth
                                 placeholder="AIza..."
                                 type="password"
                                 value={config?.gemini_api_key || ''}
                                 onChange={(e) => handleChange('gemini_api_key', e.target.value)}
-                                helperText="Optionally run Google Gemini models for aggregated trading consensus."
+                                helperText="Optionally run Gemini 2.5 Flash models for aggregated trading consensus."
                                 InputLabelProps={{ shrink: true }}
                             />
                         </Grid>
@@ -168,14 +168,14 @@ const Account: React.FC = () => {
                         {/* Anthropic */}
                         <Grid item xs={12}>
                             <Divider sx={{ my: 2 }} />
-                            <Typography variant="subtitle1" fontWeight="bold" mb={1}>Anthropic Claude</Typography>
+                            <Typography variant="subtitle1" fontWeight="bold" mb={1}>Claude 3.5 Haiku</Typography>
                             <TextField
                                 fullWidth
                                 placeholder="sk-ant-..."
                                 type="password"
                                 value={config?.anthropic_api_key || ''}
                                 onChange={(e) => handleChange('anthropic_api_key', e.target.value)}
-                                helperText="Optionally run Anthropic Claude models for aggregated trading consensus."
+                                helperText="Optionally run Claude 3.5 Haiku models for aggregated trading consensus."
                                 InputLabelProps={{ shrink: true }}
                             />
                         </Grid>

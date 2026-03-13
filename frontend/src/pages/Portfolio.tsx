@@ -56,7 +56,7 @@ const InsightPill = ({ trade }: { trade: Trade }) => {
       >
         <Psychology sx={{ fontSize: 14 }} />
         <Typography variant="caption" fontWeight="bold">
-          {trade.ai_provider || 'OPENAI'}
+          {trade.ai_provider === 'OPENAI' ? 'GPT-4o Mini' : trade.ai_provider === 'GEMINI' ? 'Gemini 2.5 Flash' : trade.ai_provider === 'ANTHROPIC' ? 'Claude 3.5 Haiku' : trade.ai_provider || 'GPT-4o Mini'}
         </Typography>
         <Typography variant="caption" sx={{ opacity: 0.75 }}>
           · {new Date(trade.executed_at!).toLocaleDateString()}
@@ -186,7 +186,7 @@ const HoldingRow = ({ symbol, holdings, trades }: { symbol: string; holdings: Ho
                           {holdings.map(h => (
                             <Box key={h.id} display="flex" justifyContent="space-between" mb={0.25}>
                               <Typography variant="caption" color="textSecondary">
-                                {h.ai_provider || 'OPENAI'}
+                                {h.ai_provider === 'OPENAI' ? 'GPT-4o Mini' : h.ai_provider === 'GEMINI' ? 'Gemini 2.5 Flash' : h.ai_provider === 'ANTHROPIC' ? 'Claude 3.5 Haiku' : h.ai_provider || 'GPT-4o Mini'}
                               </Typography>
                               <Typography variant="caption">
                                 {h.quantity} @ ${h.average_cost.toFixed(2)}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   AppBar,
   Toolbar,
@@ -35,7 +35,8 @@ import {
 } from '@mui/icons-material';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { useWebSocket } from '../contexts/WebSocketContext'; // Added WebSocketContext import
+import { useWebSocket } from '../contexts/WebSocketContext';
+import { stocksAPI, StockInfo } from '../services/api';
 
 const Navbar: React.FC = () => {
   const navigate = useNavigate();
@@ -45,6 +46,25 @@ const Navbar: React.FC = () => {
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [navMenuAnchorEl, setNavMenuAnchorEl] = useState<null | HTMLElement>(null);
   const [tradingMode, setTradingMode] = useState<string>('paper');
+  const [spyData, setSpyData] = useState<StockInfo | null>(null);
+  const spyIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  const fetchSpyData = async () => {
+    try {
+      const info = await stocksAPI.getStockInfo('SPY');
+      setSpyData(info);
+    } catch (err) {
+      console.error('Failed to fetch SPY data:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchSpyData();
+    spyIntervalRef.current = setInterval(fetchSpyData, 60000); // Poll once a minute
+    return () => {
+      if (spyIntervalRef.current) clearInterval(spyIntervalRef.current);
+    };
+  }, []);
 
   const navItems = [
     { label: 'Dashboard', path: '/', icon: <DashboardIcon /> },
@@ -135,6 +155,24 @@ const Navbar: React.FC = () => {
 
         {/* User Profile - Right aligned */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 1, sm: 2 } }}>
+          {spyData && (
+            <Box sx={{ display: { xs: 'none', lg: 'flex' }, alignItems: 'center', bgcolor: 'rgba(0,0,0,0.2)', px: 1.5, py: 0.5, borderRadius: 1, border: '1px solid rgba(255,255,255,0.1)' }}>
+              <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 'bold', mr: 1 }}>SPY</Typography>
+              <Typography variant="body2" sx={{ fontWeight: 'bold', mr: 1 }}>${spyData.current_price.toFixed(2)}</Typography>
+              <Typography
+                variant="caption"
+                sx={{
+                  color: spyData.change_percent >= 0 ? '#4caf50' : '#f44336',
+                  fontWeight: 'bold',
+                  display: 'flex',
+                  alignItems: 'center'
+                }}
+              >
+                {spyData.change_percent >= 0 ? '+' : ''}{spyData.change_percent.toFixed(2)}%
+              </Typography>
+            </Box>
+          )}
+
           <Box sx={{ display: { xs: 'none', md: 'flex' }, alignItems: 'center', ml: 1, mr: 1 }}>
             <Chip
               icon={isConnected ? <SensorsRounded fontSize="small" /> : <SensorsOffRounded fontSize="small" />}

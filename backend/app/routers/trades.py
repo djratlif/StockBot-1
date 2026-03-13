@@ -1,12 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List
-
+import pytz
+import logging
+from typing import List
 from app.auth import require_write_access
 from app.models.models import User
-from typing import List
-import logging
-
 from app.models.database import get_db
 from app.models.schemas import TradeResponse, APIResponse
 from app.services.portfolio_service import portfolio_service
@@ -36,8 +35,12 @@ async def get_todays_trades(db: Session = Depends(get_db)):
         from app.models.models import Trades
         
         today = date.today()
+        est = pytz.timezone("US/Eastern")
+        start_of_day_est = est.localize(datetime.combine(today, datetime.min.time()))
+        start_utc = start_of_day_est.astimezone(pytz.utc)
+        
         trades = db.query(Trades).filter(
-            Trades.executed_at >= datetime.combine(today, datetime.min.time())
+            Trades.executed_at >= start_utc
         ).order_by(Trades.executed_at.desc()).all()
         
         return [TradeResponse.from_orm(trade) for trade in trades]
@@ -141,19 +144,34 @@ async def get_intraday_performance(db: Session = Depends(get_db)):
     """
     try:
         from app.models.models import Trades, TradeAction, Holdings, PortfolioSnapshot
-        from datetime import date, datetime
-        import pytz
+        from datetime import date, datetime, time
 
         today = date.today()
-        start_of_day = datetime.combine(today, datetime.min.time())
         est = pytz.timezone("US/Eastern")
-        start_utc = pytz.utc.localize(start_of_day)
-        now_time = datetime.now(pytz.utc).astimezone(est).strftime("%H:%M:%S")
+        
+        # Define market hours boundaries in EST and translate to UTC for DB queries
+        market_open_est = est.localize(datetime.combine(today, time(9, 30)))
+        market_close_est = est.localize(datetime.combine(today, time(16, 0)))
+        
+        start_utc = market_open_est.astimezone(pytz.utc)
+        end_utc = market_close_est.astimezone(pytz.utc)
+        
+        now_utc = datetime.now(pytz.utc)
+        now_est = now_utc.astimezone(est)
+        
+        # If past market close, anchor now_time to 16:00:00
+        if now_est > market_close_est:
+            now_time = "16:00:00"
+        else:
+            now_time = now_est.strftime("%H:%M:%S")
 
         providers = ["OPENAI", "GEMINI", "ANTHROPIC"]
 
         # ── Realized series: FIFO from today's sell trades ─────────────────
-        all_trades = db.query(Trades).order_by(Trades.executed_at.asc()).all()
+        all_trades = db.query(Trades).filter(
+            Trades.executed_at >= start_utc,
+            Trades.executed_at <= end_utc
+        ).order_by(Trades.executed_at.asc()).all()
         queues = {p: {} for p in providers}
         series = {p: [] for p in providers}
         cumulative = {p: 0.0 for p in providers}
@@ -196,7 +214,10 @@ async def get_intraday_performance(db: Session = Depends(get_db)):
         # ── Total P&L series: from PortfolioSnapshot (fluctuates with prices) ──
         snapshots = (
             db.query(PortfolioSnapshot)
-            .filter(PortfolioSnapshot.snapshot_at >= start_utc)
+            .filter(
+                PortfolioSnapshot.snapshot_at >= start_utc,
+                PortfolioSnapshot.snapshot_at <= end_utc
+            )
             .order_by(PortfolioSnapshot.snapshot_at.asc())
             .all()
         )
@@ -249,7 +270,6 @@ async def get_historical_pnl(db: Session = Depends(get_db)):
     try:
         from app.models.models import PortfolioSnapshot
         from sqlalchemy import func, desc
-        import pytz
         from datetime import datetime, timedelta
         
         est = pytz.timezone('US/Eastern')

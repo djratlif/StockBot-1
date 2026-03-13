@@ -72,13 +72,6 @@ const Report: React.FC = () => {
             </Typography>
 
             <Typography variant="h5" sx={{ mt: 2, mb: 2 }}>
-                30-Day Performance History
-            </Typography>
-            <Paper sx={{ p: 2, mb: 4 }}>
-                <HistoricalPerformanceChart />
-            </Paper>
-
-            <Typography variant="h5" sx={{ mt: 4, mb: 2 }}>
                 AI Model Leaderboard
             </Typography>
             <Grid container spacing={3}>
@@ -145,6 +138,13 @@ const Report: React.FC = () => {
             </Grid>
 
             <Typography variant="h5" sx={{ mt: 6, mb: 2 }}>
+                30-Day Performance History
+            </Typography>
+            <Paper sx={{ p: 2, mb: 4 }}>
+                <HistoricalPerformanceChart />
+            </Paper>
+
+            <Typography variant="h5" sx={{ mt: 6, mb: 2 }}>
                 Today's Trades
             </Typography>
             <TableContainer component={Paper}>
@@ -180,7 +180,7 @@ const Report: React.FC = () => {
                                     <TableCell>${trade.total_amount.toFixed(2)}</TableCell>
                                     <TableCell>
                                         <Chip
-                                            label={trade.ai_provider || 'OPENAI'}
+                                            label={trade.ai_provider === 'OPENAI' ? 'GPT-4o Mini' : trade.ai_provider === 'GEMINI' ? 'Gemini 2.5 Flash' : trade.ai_provider === 'ANTHROPIC' ? 'Claude 3.5 Haiku' : trade.ai_provider || 'GPT-4o Mini'}
                                             size="small"
                                             sx={{
                                                 bgcolor: getProviderColor(trade.ai_provider || 'OPENAI'),

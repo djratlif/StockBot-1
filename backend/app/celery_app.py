@@ -24,5 +24,5 @@ celery_app.conf.update(
     enable_utc=True,
     task_track_started=True,
     task_time_limit=300,  # 5 minutes max per task
-    task_always_eager=settings.environment.lower() != 'production',  # Run tasks synchronously locally, async in prod
+    task_always_eager=False,  # Always use Redis queue even in dev locally
 )

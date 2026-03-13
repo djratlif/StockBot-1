@@ -184,7 +184,7 @@ const Dashboard: React.FC = () => {
   const unallocated = Math.max(0, (portfolioSummary?.total_value || 0) - totalAllocated);
 
   const chartData = {
-    labels: ['OpenAI', 'Google Gemini', 'Anthropic Claude', 'Unallocated'],
+    labels: ['GPT-4o Mini', 'Gemini 2.5 Flash', 'Claude 3.5 Haiku', 'Unallocated'],
     datasets: [
       {
         data: [openAIAlloc, geminiAlloc, anthropicAlloc, unallocated],
@@ -469,9 +469,9 @@ const Dashboard: React.FC = () => {
                     sx={{ minHeight: '36px', '& .MuiTab-root': { minHeight: '36px', py: 0, px: 2, fontSize: '0.8rem' } }}
                   >
                     <Tab label="All" value="ALL" />
-                    <Tab label="OpenAI" value="OPENAI" />
-                    <Tab label="Gemini" value="GEMINI" />
-                    <Tab label="Anthropic" value="ANTHROPIC" />
+                    <Tab label="GPT-4o Mini" value="OPENAI" />
+                    <Tab label="Gemini 2.5 Flash" value="GEMINI" />
+                    <Tab label="Claude 3.5 Haiku" value="ANTHROPIC" />
                   </Tabs>
                 </Box>
                 <TableContainer component={Paper} elevation={0} variant="outlined" sx={{ bgcolor: 'background.default' }}>

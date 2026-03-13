@@ -35,9 +35,9 @@ ChartJS.register(
 );
 
 const PROVIDER_COLORS: Record<string, { border: string; background: string; label: string }> = {
-    OPENAI: { border: '#2196f3', background: 'rgba(33, 150, 243, 0.08)', label: 'OpenAI' },
-    GEMINI: { border: '#e91e8c', background: 'rgba(233, 30, 140, 0.08)', label: 'Gemini' },
-    ANTHROPIC: { border: '#ff9800', background: 'rgba(255, 152, 0, 0.08)', label: 'Claude' },
+    OPENAI: { border: '#2196f3', background: 'rgba(33, 150, 243, 0.08)', label: 'GPT-4o Mini' },
+    GEMINI: { border: '#e91e8c', background: 'rgba(233, 30, 140, 0.08)', label: 'Gemini 2.5 Flash' },
+    ANTHROPIC: { border: '#ff9800', background: 'rgba(255, 152, 0, 0.08)', label: 'Claude 3.5 Haiku' },
 };
 
 // Shared chart options factory

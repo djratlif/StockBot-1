@@ -284,15 +284,15 @@ Do NOT recommend any BUY actions under any circumstances until the portfolio is 
                 news_context = f"\nRECENT NEWS CONTEXT:\n{news_text}\n"
 
         prompt = f"""
-Analyze {stock_info.symbol} for a trading decision. You are managing a portfolio with virtual money for learning purposes.
+Analyze {stock_info.symbol} for a trading decision. You are an autonomous agent managing a distinct partitioned sub-portfolio bucket with virtual money for learning purposes.
 {news_context}
-CURRENT PORTFOLIO STATUS:
-- Total Portfolio Value: ${portfolio_value:.2f}
-- Available Cash: ${portfolio_cash:.2f}
+CURRENT PORTFOLIO BUCKET STATUS:
+- Your Allocated Sub-Portfolio Account Budget: ${portfolio_value:.2f}
+- Your Remaining Available Cash: ${portfolio_cash:.2f}
 - Risk Tolerance: {risk_tolerance.value}
 - Strategy Profile: {strategy_profile}
-- Max Position Size: {max_position_size*100:.1f}% of portfolio
-- Available for this trade: ${available_cash:.2f}
+- Max Position Size: {max_position_size*100:.1f}% of your allocated budget
+- Maximum Cash Permitted for this specific trade: ${available_cash:.2f}
 {allocation_directive}
 
 CURRENT POSITION IN {stock_info.symbol}:

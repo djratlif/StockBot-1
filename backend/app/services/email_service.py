@@ -66,7 +66,13 @@ class EmailService:
         for idx, model in enumerate(models):
             if model["score"] == 0 and model["total_positions"] == 0:
                 continue
-                
+            label_map = {
+                "OPENAI": "GPT-4o Mini",
+                "GEMINI": "Gemini 2.5 Flash",
+                "ANTHROPIC": "Claude 3.5 Haiku"
+            }
+            display_provider = label_map.get(model["provider"], model["provider"])
+            
             color = colors.get(model["provider"], "#757575")
             medal = medals[idx] if idx < len(medals) else ""
             
@@ -74,7 +80,7 @@ class EmailService:
             
             html += f"""
                     <div style="border-left: 4px solid {color}; padding: 10px; margin-bottom: 15px; background-color: #fafafa;">
-                        <h4 style="margin: 0; color: {color};">{model["provider"]} <span style="font-size: 12px; color: #333;">{medal}</span></h4>
+                        <h4 style="margin: 0; color: {color};">{display_provider} <span style="font-size: 12px; color: #333;">{medal}</span></h4>
                         <p style="font-size: 24px; font-weight: bold; margin: 5px 0;">{model['score']} <span style="font-size: 14px; color: #666; font-weight: normal;">pts</span></p>
                         <table style="width: 100%; font-size: 14px; color: #555;">
                             <tr>

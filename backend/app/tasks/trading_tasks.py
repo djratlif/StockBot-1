@@ -47,6 +47,7 @@ def execute_trading_cycle():
             db_new = SessionLocal()
             try:
                 config_new = db_new.query(BotConfig).first()
+                trading_bot_service.is_running = True  # Sync worker process RAM state
                 await trading_bot_service._analyze_and_trade(db_new, config_new)
             finally:
                 db_new.close()

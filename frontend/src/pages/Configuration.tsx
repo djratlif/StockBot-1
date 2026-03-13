@@ -181,7 +181,7 @@ const Configuration: React.FC = () => {
                 <Grid item xs={12} md={4}>
                   <Box p={3} sx={{ bgcolor: 'background.default', borderRadius: 2, border: '1px solid', borderColor: 'divider', height: '100%', display: 'flex', flexDirection: 'column' }}>
                     <Box display="flex" justifyContent="space-between" mb={3}>
-                      <Typography variant="subtitle1" fontWeight="bold">OpenAI (ChatGPT)</Typography>
+                      <Typography variant="subtitle1" fontWeight="bold">GPT-4o Mini</Typography>
                       <Chip
                         label={config.openai_active ? "Enabled" : "Disabled"}
                         color={config.openai_active ? "success" : "default"}
@@ -214,7 +214,7 @@ const Configuration: React.FC = () => {
                 <Grid item xs={12} md={4}>
                   <Box p={3} sx={{ bgcolor: 'background.default', borderRadius: 2, border: '1px solid', borderColor: 'divider', height: '100%', display: 'flex', flexDirection: 'column' }}>
                     <Box display="flex" justifyContent="space-between" mb={3}>
-                      <Typography variant="subtitle1" fontWeight="bold">Google Gemini</Typography>
+                      <Typography variant="subtitle1" fontWeight="bold">Gemini 2.5 Flash</Typography>
                       <Chip
                         label={config.gemini_active ? "Enabled" : "Disabled"}
                         color={config.gemini_active ? "secondary" : "default"}
@@ -248,7 +248,7 @@ const Configuration: React.FC = () => {
                 <Grid item xs={12} md={4}>
                   <Box p={3} sx={{ bgcolor: 'background.default', borderRadius: 2, border: '1px solid', borderColor: 'divider', height: '100%', display: 'flex', flexDirection: 'column' }}>
                     <Box display="flex" justifyContent="space-between" mb={3}>
-                      <Typography variant="subtitle1" fontWeight="bold">Anthropic Claude</Typography>
+                      <Typography variant="subtitle1" fontWeight="bold">Claude 3.5 Haiku</Typography>
                       <Chip
                         label={config.anthropic_active ? "Enabled" : "Disabled"}
                         color={config.anthropic_active ? "warning" : "default"}

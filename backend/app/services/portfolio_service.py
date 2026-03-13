@@ -2,6 +2,7 @@ from sqlalchemy.orm import Session
 from typing import Dict, List, Optional, Tuple, Any
 import logging
 from datetime import datetime, date
+import pytz
 from app.models.models import Portfolio, Holdings, Trades, BotConfig, TradeAction, ActivityLog
 from app.models.schemas import (
     PortfolioSummary, TradingStats, TradeCreate, TradingDecision, 
@@ -15,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 class PortfolioService:
     def __init__(self):
-        pass
+        self.est = pytz.timezone("US/Eastern")
     
     def initialize_portfolio(self, db: Session) -> Portfolio:
         """Initialize portfolio and sync with Alpaca"""
@@ -464,8 +465,11 @@ class PortfolioService:
         """Get number of trades executed today"""
         try:
             today = date.today()
+            start_of_day_est = self.est.localize(datetime.combine(today, datetime.min.time()))
+            start_utc = start_of_day_est.astimezone(pytz.utc)
+
             trades_today = db.query(Trades).filter(
-                Trades.executed_at >= datetime.combine(today, datetime.min.time())
+                Trades.executed_at >= start_utc
             ).count()
             return trades_today
         except Exception as e:
@@ -525,7 +529,8 @@ class PortfolioService:
         """Get number of buy and sell trades executed today"""
         try:
             today = date.today()
-            start_of_day = datetime.combine(today, datetime.min.time())
+            start_of_day_est = self.est.localize(datetime.combine(today, datetime.min.time()))
+            start_of_day = start_of_day_est.astimezone(pytz.utc)
             
             buys = db.query(Trades).filter(
                 Trades.executed_at >= start_of_day,
@@ -550,9 +555,10 @@ class PortfolioService:
         """Calculates the daily performance metrics for all AI providers"""
         try:
             today = date.today()
-            start_of_day = datetime.combine(today, datetime.min.time())
-            
-            # Fetch trades and holdings
+            start_of_day_est = self.est.localize(datetime.combine(today, datetime.min.time()))
+            start_of_day = start_of_day_est.astimezone(pytz.utc)
+
+            # Get trades since start of day to calculate daily P&L and metricsngs
             todays_trades = db.query(Trades).filter(
                 Trades.executed_at >= start_of_day
             ).order_by(Trades.executed_at.desc()).all()
@@ -720,7 +726,6 @@ class PortfolioService:
             # --- 7-DAY ROLLING TREND ---
             from app.models.models import PortfolioSnapshot
             from datetime import timedelta
-            import pytz
             
             est = pytz.timezone('US/Eastern')
             seven_days_ago = datetime.now(est) - timedelta(days=7)
@@ -765,9 +770,11 @@ class PortfolioService:
         """Check if we can make another trade today"""
         try:
             today = date.today()
-            start_of_day = datetime.combine(today, datetime.min.time())
+            start_of_day_est = self.est.localize(datetime.combine(today, datetime.min.time()))
+            start_utc = start_of_day_est.astimezone(pytz.utc)
+
             trades_today = db.query(Trades).filter(
-                Trades.executed_at >= start_of_day
+                Trades.executed_at >= start_utc
             ).count()
             return trades_today < max_daily_trades
         except Exception as e:
@@ -780,7 +787,8 @@ class PortfolioService:
             from app.models.models import Trades, Holdings, PortfolioSnapshot
 
             today = date.today()
-            start_of_day = datetime.combine(today, datetime.min.time())
+            start_of_day_est = self.est.localize(datetime.combine(today, datetime.min.time()))
+            start_of_day = start_of_day_est.astimezone(pytz.utc)
 
             # ── FIFO: compute realized P&L per provider ──────────────────────
             all_trades = db.query(Trades).order_by(Trades.executed_at.asc()).all()
