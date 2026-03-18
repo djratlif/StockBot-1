@@ -1,4 +1,5 @@
 # 🤖 StockBot - AI-Powered Trading Bot
+# Credit to Drew Ratliff
 
 An intelligent stock trading bot that uses OpenAI GPT-4 for predictive analytics and automated trading decisions with virtual money. Built with Python FastAPI backend and React TypeScript frontend.
 
