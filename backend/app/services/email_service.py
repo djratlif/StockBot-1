@@ -29,12 +29,24 @@ class EmailService:
                     <h2 style="color: #333; text-align: center;">Daily Performance Report</h2>
                     <p style="text-align: center; color: #666;">Trades and AI model performance for {date_str}</p>
                     
-                    <div style="background-color: #f8f9fa; padding: 15px; border-radius: 8px; text-align: center; margin: 20px 0; border: 1px solid #e0e0e0;">
-                        <h3 style="margin: 0; color: #555; font-size: 16px; text-transform: uppercase;">Total Portfolio Value</h3>
-                        <p style="font-size: 32px; font-weight: bold; margin: 10px 0; color: #1976d2;">${portfolio_value:,.2f}</p>
-                        <p style="margin: 0; font-size: 16px; font-weight: bold; color: {overall_pnl_color};">
-                            {overall_pnl_sign}${abs(daily_pnl):,.2f} ({overall_pnl_sign}{daily_pnl_percent:.2f}%) Today
-                        </p>
+                    <div style="background-color: #f8f9fa; padding: 15px; border-radius: 8px; text-align: center; margin: 20px 0; border: 1px solid #e0e0e0; display: flex; justify-content: center; gap: 20px;">
+                        <div style="flex: 1; min-width: 140px;">
+                            <h3 style="margin: 0; color: #555; font-size: 13px; text-transform: uppercase;">Total Portfolio</h3>
+                            <p style="font-size: 24px; font-weight: bold; margin: 5px 0; color: #1976d2;">${portfolio_value:,.2f}</p>
+                            <p style="margin: 0; font-size: 14px; font-weight: bold; color: {overall_pnl_color};">
+                                {overall_pnl_sign}{daily_pnl_percent:.2f}%
+                            </p>
+                        </div>
+                        
+                        {f'''
+                        <div style="flex: 1; min-width: 140px; border-left: 1px solid #ddd; padding-left: 20px;">
+                            <h3 style="margin: 0; color: #555; font-size: 13px; text-transform: uppercase;">Market (SPY)</h3>
+                            <p style="font-size: 24px; font-weight: bold; margin: 5px 0; color: #333;">${data["market_performance"]["price"]:.2f}</p>
+                            <p style="margin: 0; font-size: 14px; font-weight: bold; color: {"green" if data["market_performance"]["change_percent"] >= 0 else "red"};">
+                                {"+" if data["market_performance"]["change_percent"] >= 0 else ""}{data["market_performance"]["change_percent"]:.2f}%
+                            </p>
+                        </div>
+                        ''' if data.get("market_performance") else ""}
                     </div>
             """
         
@@ -184,7 +196,7 @@ class EmailService:
         if not config or not config.smtp_email or not config.smtp_password:
             return False
             
-        data = portfolio_service.get_daily_report_data(db_session)
+        data = await portfolio_service.get_daily_report_data(db_session)
         
         # Execute the blocking SMTP logic in a separate thread
         return await asyncio.to_thread(self._sync_send_email, config, data)

@@ -124,12 +124,13 @@ async def get_trade_summary(db: Session = Depends(get_db)):
 async def get_daily_report(db: Session = Depends(get_db)):
     """Get detailed daily report of trades and AI model performance"""
     try:
-        report_data = portfolio_service.get_daily_report_data(db)
+        report_data = await portfolio_service.get_daily_report_data(db)
         
         return {
             "date": report_data["date"],
             "models": report_data["models"],
-            "trades": report_data["trades"]
+            "trades": report_data["trades"],
+            "market_performance": report_data.get("market_performance")
         }
     except Exception as e:
         logger.error(f"Error generating daily report API response: {str(e)}")

@@ -192,6 +192,11 @@ export interface DailyReport {
   date: string;
   models: AIModelScore[];
   trades: Trade[];
+  market_performance?: {
+    symbol: string;
+    price: number;
+    change_percent: number;
+  };
 }
 
 export interface IntradayPerformancePoint {

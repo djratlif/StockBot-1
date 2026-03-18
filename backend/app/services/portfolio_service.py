@@ -551,12 +551,25 @@ class PortfolioService:
             logger.error(f"Error getting today's trade counts: {str(e)}")
             return {"bought": 0, "sold": 0, "total": 0}
 
-    def get_daily_report_data(self, db: Session) -> Dict[str, Any]:
+    async def get_daily_report_data(self, db: Session) -> Dict[str, Any]:
         """Calculates the daily performance metrics for all AI providers"""
         try:
             today = date.today()
             start_of_day_est = self.est.localize(datetime.combine(today, datetime.min.time()))
             start_of_day = start_of_day_est.astimezone(pytz.utc)
+
+            # Fetch market performance for comparison
+            market_performance = None
+            try:
+                spy_info = await stock_service.get_stock_info("SPY", db_session=db)
+                if spy_info:
+                    market_performance = {
+                        "symbol": "SPY",
+                        "price": spy_info.current_price,
+                        "change_percent": spy_info.change_percent
+                    }
+            except Exception as e:
+                logger.error(f"Error fetching SPY info for report: {e}")
 
             # Get trades since start of day to calculate daily P&L and metricsngs
             todays_trades = db.query(Trades).filter(
@@ -760,6 +773,7 @@ class PortfolioService:
                 "portfolio_value": portfolio_value,
                 "daily_pnl": actual_daily_pnl,
                 "daily_pnl_percent": calculated_daily_pnl_percent,
+                "market_performance": market_performance,
                 "seven_day_trend": trend_list[-7:] # Ensure we only grab the last 7 if there's slightly more
             }
         except Exception as e:

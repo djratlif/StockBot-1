@@ -71,6 +71,39 @@ const Report: React.FC = () => {
                 Trades and AI model performance for {report.date}
             </Typography>
 
+            <Grid container spacing={2} sx={{ mb: 4, mt: 1 }}>
+                <Grid item xs={12} md={6}>
+                    <Card sx={{ bgcolor: 'rgba(25, 118, 210, 0.04)', border: '1px solid rgba(25, 118, 210, 0.2)' }}>
+                        <CardContent sx={{ textAlign: 'center' }}>
+                            <Typography variant="overline" color="textSecondary">Total Portfolio Performance</Typography>
+                            <Typography variant="h4" color="primary" sx={{ fontWeight: 'bold', my: 1 }}>
+                                {report.models.reduce((sum, m) => sum + m.open_pnl, 0) >= 0 ? '+' : ''}
+                                {((report.models.reduce((sum, m) => sum + m.open_pnl, 0) / (report.models.reduce((sum, m) => sum + m.invested_amount, 0) || 1)) * 100).toFixed(2)}%
+                            </Typography>
+                            <Typography variant="body2" color="textSecondary">Combined AI Models</Typography>
+                        </CardContent>
+                    </Card>
+                </Grid>
+                {report.market_performance && (
+                    <Grid item xs={12} md={6}>
+                        <Card sx={{ bgcolor: 'rgba(0, 0, 0, 0.02)', border: '1px solid rgba(0, 0, 0, 0.1)' }}>
+                            <CardContent sx={{ textAlign: 'center' }}>
+                                <Typography variant="overline" color="textSecondary">Market Performance ({report.market_performance.symbol})</Typography>
+                                <Typography variant="h4" sx={{
+                                    fontWeight: 'bold',
+                                    my: 1,
+                                    color: report.market_performance.change_percent >= 0 ? 'success.main' : 'error.main'
+                                }}>
+                                    {report.market_performance.change_percent >= 0 ? '+' : ''}
+                                    {report.market_performance.change_percent.toFixed(2)}%
+                                </Typography>
+                                <Typography variant="body2" color="textSecondary">S&P 500 Index</Typography>
+                            </CardContent>
+                        </Card>
+                    </Grid>
+                )}
+            </Grid>
+
             <Typography variant="h5" sx={{ mt: 2, mb: 2 }}>
                 AI Model Leaderboard
             </Typography>
