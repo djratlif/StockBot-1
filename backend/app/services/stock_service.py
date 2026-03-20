@@ -134,12 +134,12 @@ class StockService:
             return None
     
     def get_trending_stocks(self) -> List[str]:
-        """Get list of trending stock symbols"""
-        # Return a curated list of popular stocks
+        """Get list of trending highly-volatile stock symbols"""
+        # Return a curated list of volatile/popular tech stocks and crypto proxies
         return [
-            "AAPL", "GOOGL", "MSFT", "AMZN", "TSLA",
-            "META", "NVDA", "NFLX", "AMD", "INTC",
-            "SPY", "QQQ", "IWM", "DIA", "VTI"
+            "TSLA", "NVDA", "MSTR", "COIN", "AMD",
+            "SMCI", "MARA", "PLTR", "ROKU", "SQ",
+            "UPST", "AFRM", "HOOD", "CVNA", "RIVN"
         ]
         
     async def get_dynamic_trending_stocks(self) -> List[str]:
@@ -180,8 +180,12 @@ class StockService:
         except Exception as e:
             logger.error(f"Error fetching dynamic trending stocks: {str(e)}")
             
-        # Combine dynamic movers with core stocks and remove duplicates
-        combined_stocks = list(set(core_stocks + dynamic_stocks))
+        # Use only dynamic movers (stocks with high gains/losses), avoiding the core top 10 list
+        combined_stocks = list(set(dynamic_stocks))
+        
+        # Fallback to highly volatile stocks if the API didn't return any movers
+        if not combined_stocks:
+            combined_stocks = ["TSLA", "NVDA", "MSTR", "COIN", "AMD", "SMCI", "MARA", "PLTR", "ROKU", "SQ"]
         
         # Cache for 1 hour
         if combined_stocks:
