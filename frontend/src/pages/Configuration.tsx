@@ -351,7 +351,7 @@ const Configuration: React.FC = () => {
                     type="number"
                     value={config.max_daily_trades}
                     onChange={(e) => handleChange('max_daily_trades', parseInt(e.target.value))}
-                    inputProps={{ min: 1, max: 50 }}
+                    inputProps={{ min: 1, max: 100 }}
                     helperText="Limit the bot's activity per session."
                   />
                 </Grid>

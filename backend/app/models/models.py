@@ -8,6 +8,8 @@ from .database import Base
 class TradeAction(enum.Enum):
     BUY = "BUY"
     SELL = "SELL"
+    HOLD = "HOLD"
+    WATCH = "WATCH"
 
 class RiskTolerance(enum.Enum):
     LOW = "LOW"
@@ -86,6 +88,8 @@ class Trades(Base):
     quantity = Column(Integer, nullable=False)
     price = Column(Float, nullable=False)
     total_amount = Column(Float, nullable=False)
+    target_price = Column(Float, nullable=True)
+    stop_loss_price = Column(Float, nullable=True)
     ai_reasoning = Column(Text, nullable=True)
     ai_provider = Column(String(50), nullable=True, default="OPENAI")
     executed_at = Column(DateTime(timezone=True), server_default=func.now())

@@ -17,15 +17,52 @@ class StockService:
         self.redis_client = redis.Redis.from_url(settings.redis_url, decode_responses=True)
         self.cache_duration = 55  # Cache for 55s to ensure expiry before 60s frontend poll
     
+    async def _get_yahoo_data(self, symbol: str) -> Optional[Dict]:
+        """Fetch real-time quote directly from Yahoo Finance without rate limits"""
+        import aiohttp
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        meta = data['chart']['result'][0]['meta']
+                        return {
+                            "price": meta.get('regularMarketPrice', 0),
+                            "prev_close": meta.get('chartPreviousClose', 0)
+                        }
+        except Exception as e:
+            logger.error(f"Yahoo Finance fallback error for {symbol}: {str(e)}")
+        return None
+
     async def get_stock_info(self, symbol: str, db_session=None) -> Optional[StockInfo]:
-        """Get comprehensive stock information using Alpaca"""
+        """Get comprehensive stock information using Alpaca (with Yahoo fallback for SPY)"""
         try:
             # Check cache first
             cache_key = f"{symbol}_info"
             cached_data = self._get_cached(cache_key)
             if cached_data:
-                return cached_data
-            
+                return StockInfo(**cached_data)
+                
+            # Yahoo Fallback for SPY (due to IEX staleness)
+            if symbol.upper() == "SPY":
+                yahoo_data = await self._get_yahoo_data(symbol)
+                if yahoo_data and yahoo_data['price'] > 0:
+                    current_price = yahoo_data['price']
+                    prev_close = yahoo_data['prev_close']
+                    change_percent = ((current_price - prev_close) / prev_close) * 100 if prev_close > 0 else 0
+                    
+                    stock_info = StockInfo(
+                        symbol=symbol.upper(),
+                        current_price=current_price,
+                        change_percent=change_percent,
+                        volume=0,
+                        market_cap=None, pe_ratio=None, week_52_high=None, week_52_low=None
+                    )
+                    self._cache_data(cache_key, stock_info)
+                    return stock_info
+
             # Use Alpaca
             stock_info = await alpaca_service.get_stock_info(symbol)
             if stock_info:
@@ -42,13 +79,20 @@ class StockService:
             return None
     
     async def get_current_price(self, symbol: str) -> Optional[float]:
-        """Get current stock price using Alpaca"""
+        """Get current stock price using Alpaca (with Yahoo fallback for SPY)"""
         try:
             # Check cache first
             cache_key = f"{symbol}_price"
             cached_data = self._get_cached(cache_key)
             if cached_data is not None:
                 return float(cached_data)
+                
+            # Yahoo Fallback for SPY
+            if symbol.upper() == "SPY":
+                yahoo_data = await self._get_yahoo_data(symbol)
+                if yahoo_data and yahoo_data['price'] > 0:
+                    self._cache_data(cache_key, yahoo_data['price'])
+                    return yahoo_data['price']
             
             # Use Alpaca
             current_price = await alpaca_service.get_current_price(symbol)

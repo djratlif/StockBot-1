@@ -372,7 +372,9 @@ class TradingBotService:
                         quantity=raw_decision['quantity'],
                         confidence=raw_decision['confidence'],
                         reasoning=raw_decision['reasoning'],
-                        current_price=raw_decision['current_price']
+                        current_price=raw_decision['current_price'],
+                        target_price=raw_decision.get('target_price'),
+                        stop_loss_price=raw_decision.get('stop_loss_price')
                     )
                     decision.ai_provider = raw_decision.get('ai_provider')
                 elif raw_decision:
@@ -399,23 +401,32 @@ class TradingBotService:
                             timestamp=datetime.now(self.est)
                         ))
                         db.commit()
-                    elif decision and decision.confidence >= 5:
-                        trading_decisions.append(decision)
-                        logger.info(f"Added {provider_name} trading decision for {symbol}: {decision.action} {decision.quantity} shares (Confidence: {decision.confidence}/10)")
-                        db.add(ActivityLog(
-                            action=f"{provider_name}_DECISION",
-                            details=f"[{provider_name}] {decision.action.value} {decision.quantity} shares of {symbol} @ ${decision.current_price:.2f} — Confidence: {decision.confidence}/10",
-                            timestamp=datetime.now(self.est)
-                        ))
-                        db.commit()
                     elif decision:
-                        logger.info(f"Low confidence decision for {symbol} by {provider_name}: {decision.action} {decision.quantity} shares (Confidence: {decision.confidence}/10) - skipped")
-                        db.add(ActivityLog(
-                            action=f"{provider_name}_LOW_CONFIDENCE",
-                            details=f"[{provider_name}] {decision.action.value} {decision.quantity} shares of {symbol} skipped — confidence too low ({decision.confidence}/10)",
-                            timestamp=datetime.now(self.est)
-                        ))
-                        db.commit()
+                        if decision.action.value in ["HOLD", "WATCH"]:
+                            logger.info(f"AI Insight for {symbol} by {provider_name}: {decision.action.value}")
+                            db.add(ActivityLog(
+                                action=f"{provider_name}_INSIGHT",
+                                details=f"[{provider_name}] {decision.action.value} {symbol} — {decision.reasoning}",
+                                timestamp=datetime.now(self.est)
+                            ))
+                            db.commit()
+                        elif decision.confidence >= 5:
+                            trading_decisions.append(decision)
+                            logger.info(f"Added {provider_name} trading decision for {symbol}: {decision.action} {decision.quantity} shares (Confidence: {decision.confidence}/10)")
+                            db.add(ActivityLog(
+                                action=f"{provider_name}_DECISION",
+                                details=f"[{provider_name}] {decision.action.value} {decision.quantity} shares of {symbol} @ ${decision.current_price:.2f} — Confidence: {decision.confidence}/10",
+                                timestamp=datetime.now(self.est)
+                            ))
+                            db.commit()
+                        else:
+                            logger.info(f"Low confidence decision for {symbol} by {provider_name}: {decision.action} {decision.quantity} shares (Confidence: {decision.confidence}/10) - skipped")
+                            db.add(ActivityLog(
+                                action=f"{provider_name}_LOW_CONFIDENCE",
+                                details=f"[{provider_name}] {decision.action.value} {decision.quantity} shares of {symbol} skipped — confidence too low ({decision.confidence}/10)",
+                                timestamp=datetime.now(self.est)
+                            ))
+                            db.commit()
                 except Exception as log_err:
                     logger.warning(f"Failed to log decision for {symbol} ({provider_name}): {log_err}")
 

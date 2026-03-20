@@ -189,9 +189,10 @@ class AITradingService:
             cot_prompt += '  "trader_pitch": "The TRADER provides their analysis and proposes an action...",\n'
             cot_prompt += '  "risk_critique": "The RISK MANAGER reviews the pitch and highlights potential downsides...",\n'
             cot_prompt += '  "executive_decision": {\n'
-            cot_prompt += '    "action": "BUY", "SELL", or "HOLD",\n'
-            cot_prompt += '    "quantity": integer number of shares (0 for HOLD),\n'
-            cot_prompt += '    "confidence": integer 1-10,\n'
+            cot_prompt += '    "action": "BUY", "SELL", "HOLD" or "WATCH",\n'
+            cot_prompt += '    "confidence": integer 1-10 (For BUY/SELL, determines how much of your allocated budget to spend),\n'
+            cot_prompt += '    "target_price": float (The price target to take profit, required for BUY),\n'
+            cot_prompt += '    "stop_loss_price": float (The absolute price to stop loss, required for BUY),\n'
             cot_prompt += '    "reasoning": "The EXECUTIVE weighs the pitch and critique to make the final call."\n'
             cot_prompt += '  }\n'
             cot_prompt += "}\n"
@@ -212,7 +213,7 @@ class AITradingService:
             
             # Parse the AI response
             logger.info(f"AI Response for {symbol}: {ai_response[:200]}...")  # Log first 200 chars
-            decision = self._parse_ai_response(ai_response, stock_info, available_cash)
+            decision = self._parse_ai_response(ai_response, stock_info, available_cash, current_holdings)
             
             if decision:
                 decision.ai_provider = ai_provider
@@ -266,7 +267,7 @@ class AITradingService:
             allocation_directive = f"""
 CRITICAL DIRECTIVE:
 Your current portfolio allocation limit has been EXCEEDED by ${allocation_overage:.2f}.
-Your ONLY permitted actions right now are to SELL existing holdings to bring the total value under the limit, or HOLD.
+Your ONLY permitted actions right now are to SELL existing holdings to bring the total value under the limit, or HOLD/WATCH.
 Do NOT recommend any BUY actions under any circumstances until the portfolio is rebalanced.
 """
         
@@ -318,28 +319,28 @@ TRADING CONSTRAINTS:
 - Factor in the risk tolerance level
 
 DECISION REQUIRED:
-Based on this analysis, should I BUY, SELL, or HOLD {stock_info.symbol}?
+Based on this analysis, should I BUY, SELL, HOLD, or WATCH {stock_info.symbol}?
 
-If BUY: Calculate how many shares to buy with available cash
-If SELL: Consider selling all or partial position
-If HOLD: No action needed
+If BUY: Provide your confidence level (1-10). The system will automatically calculate how many shares to buy based on your confidence and available cash. Provide a target_price (take profit) and a stop_loss_price.
+If SELL: Provide your confidence level. The system will sell your entire existing position.
+If HOLD or WATCH: Evaluate the stock for future opportunities.
 
 Provide your response in this EXACT format:
-ACTION: [BUY/SELL/HOLD]
-QUANTITY: [number of shares, 0 for HOLD]
+ACTION: [BUY/SELL/HOLD/WATCH]
 CONFIDENCE: [1-10 scale]
+TARGET_PRICE: [float price for take-profit trigger (0 if N/A)]
+STOP_LOSS_PRICE: [float price for stop-loss trigger (0 if N/A)]
 REASONING: [2-3 sentences explaining your decision]
 
 Consider:
-1. Technical analysis (price trends, volume)
-2. Risk management (position sizing, diversification)
-3. Market conditions and volatility
-4. The educational nature of this virtual trading
+1. Technical analysis (price trends, support, resistance)
+2. Risk management (appropriate stop loss spacing relative to volatility)
+3. Market conditions and momentum
 """
         
         return prompt
     
-    def _parse_ai_response(self, response: str, stock_info: StockInfo, available_cash: float, fallback_reasoning: str = "AI analysis completed") -> Optional[TradingDecision]:
+    def _parse_ai_response(self, response: str, stock_info: StockInfo, available_cash: float, current_holdings: Dict, fallback_reasoning: str = "AI analysis completed") -> Optional[TradingDecision]:
         """Parse the AI's response into a TradingDecision object"""
         try:
             logger.info(f"Parsing AI response for {stock_info.symbol}:")
@@ -370,22 +371,36 @@ Consider:
             exec_dec = data.get("executive_decision", {})
             action = str(exec_dec.get("action", "")).upper()
             
-            if not action or action not in ["BUY", "SELL", "HOLD"]:
+            if not action or action not in ["BUY", "SELL", "HOLD", "WATCH"]:
                 logger.error(f"Could not parse valid ACTION from AI response: {action}")
                 return None
                 
             logger.info(f"Parsed ACTION: {action}")
             
-            quantity = int(exec_dec.get("quantity", 0)) if action != "HOLD" else 0
-            logger.info(f"Parsed QUANTITY: {quantity}")
-
-            if quantity <= 0 and action != "HOLD":
-                logger.warning(f"Invalid quantity {quantity} for {stock_info.symbol}")
-                return None
-                
             confidence = int(exec_dec.get("confidence", 8))
             confidence = max(1, min(10, confidence))
             logger.info(f"Parsed CONFIDENCE: {confidence}")
+            
+            target_price = float(exec_dec.get("target_price", 0.0))
+            stop_loss_price = float(exec_dec.get("stop_loss_price", 0.0))
+            
+            # --- CONVICTION SCORING POSITION SIZING ---
+            quantity = 0
+            if action == "BUY":
+                # Scale investment based on confidence (e.g., 5/10 spends 50% of available cash)
+                spend_ratio = confidence / 10.0
+                capital_to_deploy = available_cash * spend_ratio
+                quantity = int(capital_to_deploy / stock_info.current_price)
+                if quantity <= 0:
+                    logger.warning(f"Calculated BUY quantity is 0 for {stock_info.symbol} (Price: ${stock_info.current_price:.2f}, Capital: ${capital_to_deploy:.2f})")
+                    return None
+            elif action == "SELL":
+                # System automatically liquidates the entire position held by this AI
+                current_position = current_holdings.get(stock_info.symbol, {})
+                quantity = current_position.get('quantity', 0)
+                if quantity <= 0:
+                    logger.warning(f"AI requested SELL for {stock_info.symbol} but quantity owned is {quantity}")
+                    return None
             
             reasoning = str(exec_dec.get("reasoning", fallback_reasoning))
             # Prepend the trader pitch and risk critique for full context in the DB
@@ -393,25 +408,15 @@ Consider:
             critique = str(data.get("risk_critique", ""))
             full_reasoning = f"{reasoning}\n\n[Trader Phase]: {pitch}\n\n[Risk Phase]: {critique}"
             
-            if action == "BUY":
-                max_shares = int(available_cash / stock_info.current_price)
-                if quantity > max_shares:
-                    original_quantity = quantity
-                    quantity = max_shares
-                    full_reasoning += f"\n(Adjusted quantity from {original_quantity} to {quantity} shares based on available cash)"
-                    logger.info(f"Adjusted BUY quantity from {original_quantity} to {quantity} for {stock_info.symbol}")
-            
-            if quantity <= 0 and action != "HOLD":
-                logger.warning(f"Final quantity is 0 or negative for {stock_info.symbol} despite validation")
-                return None
-            
             decision = TradingDecision(
                 action=TradeActionEnum(action),
                 symbol=stock_info.symbol,
                 quantity=quantity,
                 confidence=confidence,
                 reasoning=full_reasoning,
-                current_price=stock_info.current_price
+                current_price=stock_info.current_price,
+                target_price=target_price if target_price > 0 else None,
+                stop_loss_price=stop_loss_price if stop_loss_price > 0 else None
             )
             
             logger.info(f"Successfully created trading decision for {stock_info.symbol}: {action} {quantity} shares (confidence: {confidence})")
@@ -501,13 +506,45 @@ Keep each analysis to one line.
             logger.error(f"Error validating trading decision: {str(e)}")
             return False
 
-    async def chat_with_assistant(self, user_message: str, chat_history: List[Dict], portfolio_summary: Dict, ai_provider: str, api_key: Optional[str] = None, config=None) -> str:
+    async def chat_with_assistant(self, user_message: str, chat_history: List[Dict], portfolio_summary: Dict, ai_provider: str, api_key: Optional[str] = None, config=None, holdings_data: List[Dict] = None, recent_trades: List[Dict] = None) -> str:
         """Process a conversational query using the user's specific LLM."""
         try:
             # Build system Prompt
             system_prompt = f"You are StockBot's interactive AI assistant.\nYour goal is to answer the user's questions about their current trading portfolio, their configuration, or general trading strategies.\n\nCURRENT PORTFOLIO STATE:\n- Total Value: ${portfolio_summary.get('total_value', 0):.2f}\n- Cash Balance: ${portfolio_summary.get('cash_balance', 0):.2f}\n- Invested Value: ${portfolio_summary.get('holdings_value', 0):.2f}\n- Total Return: ${portfolio_summary.get('total_return', 0):.2f} ({portfolio_summary.get('return_percentage', 0):.2f}%)\n- Daily Change: ${portfolio_summary.get('daily_change', 0):.2f} ({portfolio_summary.get('daily_change_percent', 0):.2f}%)\n- Holding Count: {portfolio_summary.get('holdings_count', 0)}\n"
             if config:
                 system_prompt += f"\nBOT CONFIGURATION:\n- Strategy: {config.strategy_profile.value if hasattr(config.strategy_profile, 'value') else config.strategy_profile}\n- Risk Tolerance: {config.risk_tolerance.value if hasattr(config.risk_tolerance, 'value') else config.risk_tolerance}\n- Max Position Size: {config.max_position_size * 100}%\n- Stop Loss: {config.stop_loss_percentage * 100}%\n- Take Profit: {config.take_profit_percentage * 100}%\n- Is Active: {config.is_active}\n"
+            
+            if holdings_data:
+                system_prompt += "\nDETAILED HOLDINGS (Current Real-Time State):\n"
+                for h in holdings_data:
+                    cost_basis = h.get('quantity', 0) * h.get('average_cost', 0)
+                    current_value = h.get('quantity', 0) * h.get('current_price', 0)
+                    pnl = current_value - cost_basis
+                    pnl_pct = (pnl / cost_basis * 100) if cost_basis > 0 else 0
+                    
+                    entry_date_str = h.get('created_at', 'Unknown')
+                    if isinstance(entry_date_str, datetime):
+                        entry_date_str = entry_date_str.strftime('%Y-%m-%d')
+                    elif isinstance(entry_date_str, str) and 'T' in entry_date_str:
+                        entry_date_str = entry_date_str.split('T')[0]
+                        
+                    system_prompt += f"- {h.get('symbol', 'Unknown')}: {h.get('quantity', 0)} shares @ ${h.get('average_cost', 0):.2f} (Current: ${h.get('current_price', 0):.2f}) | P&L: ${pnl:.2f} ({pnl_pct:.2f}%) | Entry: {entry_date_str}\n"
+
+            if recent_trades:
+                system_prompt += "\nRECENT TRANSACTION HISTORY (Last 50 Trades):\n"
+                for t in recent_trades:
+                    exec_date_str = t.get('executed_at', 'Unknown')
+                    if isinstance(exec_date_str, datetime):
+                        exec_date_str = exec_date_str.strftime('%Y-%m-%d %H:%M:%S')
+                    elif isinstance(exec_date_str, str) and 'T' in exec_date_str:
+                        exec_date_str = exec_date_str.replace('T', ' ').split('.')[0]
+                    
+                    action = t.get('action', 'UNKNOWN')
+                    if hasattr(action, 'value'):
+                        action = action.value
+                        
+                    system_prompt += f"- [{exec_date_str}] {t.get('ai_provider', 'UNKNOWN')} executed {action} for {t.get('quantity', 0)} shares of {t.get('symbol', 'UNKNOWN')} @ ${t.get('price', 0):.2f}\n"
+
             system_prompt += "\nFormat your responses smoothly using standard markdown. Be concise, professional, and do not provide disclaimers."
 
             messages = [{"role": "system", "content": system_prompt}]

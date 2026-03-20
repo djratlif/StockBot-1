@@ -6,6 +6,8 @@ from enum import Enum
 class TradeActionEnum(str, Enum):
     BUY = "BUY"
     SELL = "SELL"
+    HOLD = "HOLD"
+    WATCH = "WATCH"
 
 class RiskToleranceEnum(str, Enum):
     LOW = "LOW"
@@ -80,6 +82,8 @@ class TradeBase(BaseModel):
     quantity: int
     price: float
     total_amount: float
+    target_price: Optional[float] = None
+    stop_loss_price: Optional[float] = None
     ai_reasoning: Optional[str] = None
     ai_provider: Optional[str] = "OPENAI"
 
@@ -104,7 +108,7 @@ class StrategyProfileEnum(str, Enum):
 
 # Bot Configuration Schemas
 class BotConfigBase(BaseModel):
-    max_daily_trades: int = Field(default=5, ge=1, le=50)
+    max_daily_trades: int = Field(default=5, ge=1, le=100)
     max_position_size: float = Field(default=0.20, ge=0.01, le=1.0)
     
     openai_api_key: Optional[str] = None
@@ -135,7 +139,7 @@ class BotConfigBase(BaseModel):
     portfolio_allocation_amount: float = Field(default=2000.0, ge=0.0)
 
 class BotConfigUpdate(BaseModel):
-    max_daily_trades: Optional[int] = Field(None, ge=1, le=50)
+    max_daily_trades: Optional[int] = Field(None, ge=1, le=100)
     max_position_size: Optional[float] = Field(None, ge=0.01, le=1.0)
     
     openai_api_key: Optional[str] = None
@@ -205,6 +209,8 @@ class TradingDecision(BaseModel):
     confidence: int = Field(..., ge=1, le=10)
     reasoning: str
     current_price: float
+    target_price: Optional[float] = None
+    stop_loss_price: Optional[float] = None
     ai_provider: Optional[str] = "OPENAI"
 
 # Portfolio Summary Schema

@@ -209,7 +209,9 @@ class PortfolioService:
             order = alpaca_service.submit_order(
                 symbol=decision.symbol,
                 qty=decision.quantity,
-                side=side
+                side=side,
+                take_profit_price=decision.target_price,
+                stop_loss_price=decision.stop_loss_price
             )
             
             if not order:
@@ -223,6 +225,8 @@ class PortfolioService:
                 quantity=decision.quantity,
                 price=decision.current_price, # Estimated price
                 total_amount=decision.quantity * decision.current_price, # Estimated amount
+                target_price=decision.target_price,
+                stop_loss_price=decision.stop_loss_price,
                 ai_reasoning=decision.reasoning,
                 ai_provider=decision.ai_provider
                 # We can store Alpaca Order ID if we added a column, but for now skipping

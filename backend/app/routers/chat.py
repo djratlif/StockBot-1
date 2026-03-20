@@ -25,6 +25,14 @@ async def chat_with_bot(
         portfolio_summary_obj = await portfolio_service.get_portfolio_summary(db)
         portfolio_summary = portfolio_summary_obj.model_dump() if hasattr(portfolio_summary_obj, "model_dump") else portfolio_summary_obj.dict()
         
+        # Get detailed holdings
+        holdings = await portfolio_service.get_holdings(db)
+        holdings_data = [h.model_dump() if hasattr(h, "model_dump") else h.dict() for h in holdings]
+        
+        # Get recent trading history
+        trades = portfolio_service.get_trading_history(db, limit=50)
+        recent_trades = [t.model_dump() if hasattr(t, "model_dump") else t.dict() for t in trades]
+        
         # Get config
         config = db.query(BotConfig).first()
         
@@ -45,7 +53,9 @@ async def chat_with_bot(
             portfolio_summary=portfolio_summary,
             ai_provider=active_provider,
             api_key=api_key,
-            config=config
+            config=config,
+            holdings_data=holdings_data,
+            recent_trades=recent_trades
         )
         return {"response": response}
         

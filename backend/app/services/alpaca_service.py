@@ -10,7 +10,7 @@ from alpaca.data.requests import StockLatestQuoteRequest, StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
 from alpaca.data.enums import DataFeed
 from alpaca.trading.client import TradingClient
-from alpaca.trading.requests import MarketOrderRequest, GetOrdersRequest
+from alpaca.trading.requests import MarketOrderRequest, GetOrdersRequest, TakeProfitRequest, StopLossRequest
 from alpaca.trading.enums import OrderSide, TimeInForce, QueryOrderStatus
 from alpaca.common.exceptions import APIError
 
@@ -238,17 +238,23 @@ class AlpacaService:
             logger.error(f"Error getting Alpaca orders: {str(e)}")
             return []
 
-    def submit_order(self, symbol: str, qty: int, side: str, type: str = 'market', time_in_force: str = 'day'):
+    def submit_order(self, symbol: str, qty: int, side: str, type: str = 'market', time_in_force: str = 'day', take_profit_price: Optional[float] = None, stop_loss_price: Optional[float] = None):
         """Submit an order to Alpaca"""
         if not self.trading_client:
             return None
         try:
-            market_order_data = MarketOrderRequest(
-                symbol=symbol,
-                qty=qty,
-                side=OrderSide.BUY if side.upper() == 'BUY' else OrderSide.SELL,
-                time_in_force=TimeInForce.DAY
-            )
+            order_args = {
+                "symbol": symbol,
+                "qty": qty,
+                "side": OrderSide.BUY if side.upper() == 'BUY' else OrderSide.SELL,
+                "time_in_force": TimeInForce.DAY
+            }
+            if take_profit_price:
+                order_args["take_profit"] = TakeProfitRequest(limit_price=round(take_profit_price, 2))
+            if stop_loss_price:
+                order_args["stop_loss"] = StopLossRequest(stop_price=round(stop_loss_price, 2))
+                
+            market_order_data = MarketOrderRequest(**order_args)
             
             order = self.trading_client.submit_order(order_data=market_order_data)
             return order
