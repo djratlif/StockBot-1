@@ -67,6 +67,27 @@ class EmailService:
                         </div>
                 """
             html += "</div>"
+            
+        market_comp = data.get("market_comparison")
+        if market_comp and market_comp.get("labels"):
+            import urllib.parse
+            # We construct a QuickChart.io URL natively since email clients strip JS
+            labels_str = "[" + ",".join([f"'{str(l)}'" for l in market_comp["labels"]]) + "]"
+            port_str = "[" + ",".join([str(p) for p in market_comp["portfolio_pct"]]) + "]"
+            spy_str = "[" + ",".join([str(p) for p in market_comp["market_pct"]]) + "]"
+            
+            qc_json = f"{{type:'line',data:{{labels:{labels_str},datasets:[{{label:'Portfolio %',data:{port_str},borderColor:'#1976d2',backgroundColor:'rgba(25,118,210,0.1)',fill:true}},{{label:'SPY %',data:{spy_str},borderColor:'#ed6c02',backgroundColor:'rgba(237,108,2,0.1)',fill:true}}]}},options:{{legend:{{position:'bottom'}}}}}}"
+            
+            # URL encode the string payload
+            encoded_chart = urllib.parse.quote(qc_json)
+            chart_url = f"https://quickchart.io/chart?c={encoded_chart}&w=600&h=300"
+            
+            html += f"""
+                    <h3 style="border-bottom: 2px solid #ed6c02; padding-bottom: 5px; color: #ed6c02; margin-top: 25px;">Portfolio vs Market (7-Day)</h3>
+                    <div style="text-align: center; margin-bottom: 20px;">
+                        <img src="{chart_url}" style="max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 8px;" alt="Performance Graph" />
+                    </div>
+            """
 
         html += """
                     <h3 style="border-bottom: 2px solid #1976d2; padding-bottom: 5px; color: #1976d2; margin-top: 25px;">AI Model Leaderboard</h3>
@@ -197,6 +218,8 @@ class EmailService:
             return False
             
         data = await portfolio_service.get_daily_report_data(db_session)
+        market_comp = await portfolio_service.get_market_comparison(period="1W")
+        data["market_comparison"] = market_comp
         
         # Execute the blocking SMTP logic in a separate thread
         return await asyncio.to_thread(self._sync_send_email, config, data)

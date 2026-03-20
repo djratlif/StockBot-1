@@ -17,6 +17,7 @@ import {
     Alert
 } from '@mui/material';
 import HistoricalPerformanceChart from '../components/HistoricalPerformanceChart';
+import PortfolioMarketChart from '../components/PortfolioMarketChart';
 import { portfolioAPI, DailyReport } from '../services/api';
 
 const Report: React.FC = () => {
@@ -175,6 +176,13 @@ const Report: React.FC = () => {
             </Typography>
             <Paper sx={{ p: 2, mb: 4 }}>
                 <HistoricalPerformanceChart />
+            </Paper>
+
+            <Typography variant="h5" sx={{ mt: 6, mb: 2 }}>
+                Portfolio vs Market (7-Day)
+            </Typography>
+            <Paper sx={{ p: 2, mb: 4 }}>
+                <PortfolioMarketChart />
             </Paper>
 
             <Typography variant="h5" sx={{ mt: 6, mb: 2 }}>

@@ -563,10 +563,14 @@ class PortfolioService:
             try:
                 spy_info = await stock_service.get_stock_info("SPY", db_session=db)
                 if spy_info:
+                    # Handles both Pydantic models (fresh fetch) and Dicts (Redis cache hit)
+                    spy_price = spy_info.current_price if hasattr(spy_info, 'current_price') else spy_info.get('current_price', 0.0)
+                    spy_change = spy_info.change_percent if hasattr(spy_info, 'change_percent') else spy_info.get('change_percent', 0.0)
+                    
                     market_performance = {
                         "symbol": "SPY",
-                        "price": spy_info.current_price,
-                        "change_percent": spy_info.change_percent
+                        "price": spy_price,
+                        "change_percent": spy_change
                     }
             except Exception as e:
                 logger.error(f"Error fetching SPY info for report: {e}")
@@ -697,23 +701,15 @@ class PortfolioService:
                     # Fallback to open positions if no sells today
                     stats["win_rate"] = (stats["profitable_positions"] / stats["total_positions"]) * 100
                     
-                # Add the REALIZED PNL to the open_pnl slot so it shows on the UI accurately
-                if p in realized_pnls:
-                    stats["open_pnl"] += realized_pnls[p]
-                
-                # Use daily realized Pnl fraction + Win Rate for the score calculation
+                # Use open_pnl + Win Rate for the score calculation
                 pnl_percent = (stats["open_pnl"] / stats["invested_amount"]) * 100 if stats["invested_amount"] > 0 else 0
                 if total_sells.get(p, 0) > 0 or stats["trades_today"] > 0:
                     score_calc = 50 + (pnl_percent * 2) + (stats["win_rate"] * 0.3)
                     stats["score"] = max(0, min(100, int(score_calc)))
             
-            # Recalculate top level PnL explicitly from the sum of what the models actually outputted 
-            # so performance exactly matches regardless of unseen manual Alpaca actions.
+            # Revert the mathematical bypass to ensure the Top Level Portfolio metrics 
+            # are mathematically accurate to Alpaca regardless of unseen manual trades.
             actual_daily_pnl = sum(stats.get("open_pnl", 0.0) for stats in model_stats.values())
-            
-            # If we don't have last_equity from Alpaca, we can use portfolio_value to approximate today's start size
-            start_portfolio_value = portfolio_value - actual_daily_pnl if portfolio_value > 0 else 1
-            calculated_daily_pnl_percent = (actual_daily_pnl / start_portfolio_value) * 100
             
             # Summarize today's trades
             trade_summaries = {}
@@ -741,10 +737,10 @@ class PortfolioService:
             from datetime import timedelta
             
             est = pytz.timezone('US/Eastern')
-            seven_days_ago = datetime.now(est) - timedelta(days=7)
+            eight_days_ago = datetime.now(est) - timedelta(days=8)
             
             snapshots = db.query(PortfolioSnapshot).filter(
-                PortfolioSnapshot.snapshot_at >= seven_days_ago
+                PortfolioSnapshot.snapshot_at >= eight_days_ago
             ).order_by(PortfolioSnapshot.snapshot_at.asc()).all()
             
             daily_trend = {}
@@ -756,23 +752,34 @@ class PortfolioService:
                 daily_trend[d_str][snap.ai_provider] = snap.total_pnl
                 
             trend_list = []
+            previous_cumulative = None
+            
             for d_str, data in sorted(daily_trend.items(), key=lambda x: x[1]["sort_key"]):
+                day_cumulative_total = sum(v for k,v in data.items() if k != "sort_key")
+                
+                if previous_cumulative is None:
+                    # Treat the very first day in the rolling 8-day window as the baseline
+                    previous_cumulative = day_cumulative_total
+                    continue
+                    
                 # Skip today since the whole email is about today
                 if data["sort_key"] == today:
                     continue
-                day_total = sum(v for k,v in data.items() if k != "sort_key")
+                    
+                daily_pnl_delta = day_cumulative_total - previous_cumulative
                 trend_list.append({
                     "date": d_str,
-                    "pnl": day_total
+                    "pnl": daily_pnl_delta
                 })
+                previous_cumulative = day_cumulative_total
                 
             return {
                 "date": today.strftime("%Y-%m-%d"),
                 "models": list(model_stats.values()),
                 "trades": summarized_trades,
                 "portfolio_value": portfolio_value,
-                "daily_pnl": actual_daily_pnl,
-                "daily_pnl_percent": calculated_daily_pnl_percent,
+                "daily_pnl": daily_pnl,
+                "daily_pnl_percent": daily_pnl_percent,
                 "market_performance": market_performance,
                 "seven_day_trend": trend_list[-7:] # Ensure we only grab the last 7 if there's slightly more
             }
@@ -835,6 +842,82 @@ class PortfolioService:
         except Exception as e:
             logger.error(f"Error recording portfolio snapshots: {str(e)}")
             db.rollback()
+
+    async def get_market_comparison(self, period: str = "1W") -> dict:
+        """Fetch comparative line graph data for formatting into charting tools."""
+        try:
+            from alpaca.trading.requests import GetPortfolioHistoryRequest
+            from alpaca.data.requests import StockBarsRequest
+            from alpaca.data.timeframe import TimeFrame
+            from alpaca.data.enums import DataFeed
+            import datetime
+            
+            # 1. Fetch Portfolio History from Alpaca
+            req = GetPortfolioHistoryRequest(period=period, timeframe="1D")
+            port_history = alpaca_service.trading_client.get_portfolio_history(req)
+            
+            labels = []
+            portfolio_pct = []
+            
+            for i in range(len(port_history.timestamp)):
+                dt = datetime.datetime.fromtimestamp(port_history.timestamp[i])
+                labels.append(dt.strftime("%b %d"))
+                portfolio_pct.append(round(port_history.profit_loss_pct[i] * 100, 2))
+                
+            # 2. Fetch SPY History from Alpaca
+            end_dt = datetime.datetime.now()
+            days_back = 7 if period == "1W" else 30
+            start_dt = end_dt - datetime.timedelta(days=days_back + 2) # buffer
+            
+            spy_req = StockBarsRequest(
+                symbol_or_symbols="SPY",
+                timeframe=TimeFrame.Day,
+                start=start_dt,
+                end=end_dt,
+                feed=DataFeed.IEX
+            )
+            
+            market_pct = []
+            if alpaca_service.data_client:
+                bars = alpaca_service.data_client.get_stock_bars(spy_req)
+                if "SPY" in bars.df.index.get_level_values(0):
+                    df = bars.df.loc["SPY"]
+                    
+                    # We need to compute SPY's percent change relative to the same starting point
+                    first_port_ts = port_history.timestamp[0]
+                    first_port_date = datetime.datetime.fromtimestamp(first_port_ts).date()
+                    
+                    baseline_close = None
+                    for index, row in df.iterrows():
+                        if index.date() <= first_port_date:
+                            baseline_close = row['close']
+                    
+                    if baseline_close is None and not df.empty:
+                        baseline_close = df.iloc[0]['close']
+                        
+                    # Map the SPY bars to the labels
+                    for ts in port_history.timestamp:
+                        target_date = datetime.datetime.fromtimestamp(ts).date()
+                        current_close = baseline_close
+                        for index, row in df.iterrows():
+                            if index.date() <= target_date:
+                                current_close = row['close']
+                        
+                        pct = ((current_close - baseline_close) / baseline_close) * 100 if baseline_close else 0
+                        market_pct.append(round(pct, 2))
+                else:
+                    market_pct = [0] * len(labels)
+            else:
+                market_pct = [0] * len(labels)
+                
+            return {
+                "labels": labels,
+                "portfolio_pct": portfolio_pct,
+                "market_pct": market_pct
+            }
+        except Exception as e:
+            logger.error(f"Error generating comparative line graph data: {e}")
+            return {"labels": [], "portfolio_pct": [], "market_pct": []}
 
 # Global instance
 portfolio_service = PortfolioService()

@@ -97,6 +97,56 @@ class StockService:
             "META", "NVDA", "NFLX", "AMD", "INTC",
             "SPY", "QQQ", "IWM", "DIA", "VTI"
         ]
+        
+    async def get_dynamic_trending_stocks(self) -> List[str]:
+        """Get dynamically generated list of top moving stocks combined with core stocks"""
+        core_stocks = self.get_trending_stocks()
+        
+        cache_key = "dynamic_trending_stocks_v2"
+        cached_data = self._get_cached(cache_key)
+        if cached_data:
+            return cached_data
+            
+        dynamic_stocks = []
+        try:
+            url = "https://data.alpaca.markets/v1beta1/screener/stocks/movers"
+            headers = {
+                "APCA-API-KEY-ID": settings.alpaca_api_key,
+                "APCA-API-SECRET-KEY": settings.alpaca_secret_key
+            }
+            
+            import aiohttp
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        gainers = data.get("gainers", [])
+                        losers = data.get("losers", [])
+                        
+                        # Filter criteria: price >= $2.00, avoid thinly traded or weird symbols (with dots/W)
+                        for item in (gainers + losers):
+                            symbol = item.get("symbol", "")
+                            price = item.get("price", 0)
+                            if price >= 2.0 and "." not in symbol and not symbol.endswith("W"):
+                                dynamic_stocks.append(symbol)
+                                
+                        logger.info(f"Fetched {len(dynamic_stocks)} dynamic trending stocks from Alpaca")
+                    else:
+                        logger.warning(f"Failed to fetch dynamic stocks, status: {response.status}")
+        except Exception as e:
+            logger.error(f"Error fetching dynamic trending stocks: {str(e)}")
+            
+        # Combine dynamic movers with core stocks and remove duplicates
+        combined_stocks = list(set(core_stocks + dynamic_stocks))
+        
+        # Cache for 1 hour
+        if combined_stocks:
+            try:
+                self.redis_client.setex(cache_key, 3600, json.dumps(combined_stocks))
+            except redis.exceptions.ConnectionError:
+                pass
+                
+        return combined_stocks
     
     async def validate_symbol(self, symbol: str) -> bool:
         """Validate if a stock symbol exists using Alpaca"""

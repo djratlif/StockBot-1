@@ -30,6 +30,16 @@ async def get_portfolio(db: Session = Depends(get_db)):
         logger.error(f"Error getting portfolio: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
+@router.get("/market-comparison")
+async def get_market_comparison(period: str = "1W"):
+    """Get dual-line graph dataset mapping Portfolio % against Market %"""
+    try:
+        data = await portfolio_service.get_market_comparison(period=period)
+        return data
+    except Exception as e:
+        logger.error(f"Error getting comparative dataset: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 @router.get("/summary", response_model=PortfolioSummary)
 async def get_portfolio_summary(db: Session = Depends(get_db)):
     """Get comprehensive portfolio summary with returns and statistics"""

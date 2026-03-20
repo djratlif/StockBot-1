@@ -129,11 +129,13 @@ class TradingBotService:
             current_holdings = portfolio_service.get_current_holdings_dict(db)
             
             # Get trending stocks to analyze
-            trending_stocks = stock_service.get_trending_stocks()
+            trending_stocks = await stock_service.get_dynamic_trending_stocks()
             self.is_fetching = False
             
-            # Limit analysis to top stocks to avoid API rate limits
-            stocks_to_analyze = trending_stocks[:10]
+            # Randomly sample stocks to avoid API rate limits while analyzing the whole expanded universe progressively
+            import random
+            sample_size = min(10, len(trending_stocks))
+            stocks_to_analyze = random.sample(trending_stocks, sample_size)
             
             # Add current holdings to analysis list (to consider selling)
             for symbol in current_holdings.keys():
@@ -225,6 +227,58 @@ class TradingBotService:
 
                 # Get current holdings specific to this provider
                 provider_holdings = portfolio_service.get_current_holdings_dict(db, ai_provider=provider_name)
+                
+                # --- AUTOMATED RISK MANAGEMENT OVERRIDE ---
+                stop_loss = getattr(config, 'stop_loss_percentage', -0.10)
+                take_profit = getattr(config, 'take_profit_percentage', 0.15)
+                
+                symbols_to_remove = []
+                for symbol, holding in provider_holdings.items():
+                    if symbol not in market_data:
+                        continue
+                        
+                    current_price = market_data[symbol]["info"].current_price
+                    avg_cost = holding["average_cost"]
+                    qty = holding["quantity"]
+                    
+                    if avg_cost > 0 and qty > 0:
+                        return_pct = (current_price - avg_cost) / avg_cost
+                        action_needed = False
+                        reason = ""
+                        
+                        if return_pct <= stop_loss:
+                            action_needed = True
+                            reason = f"STOP_LOSS_TRIGGERED at {return_pct*100:.2f}% (Threshold: {stop_loss*100:.2f}%)"
+                        elif return_pct >= take_profit:
+                            action_needed = True
+                            reason = f"TAKE_PROFIT_TRIGGERED at {return_pct*100:.2f}% (Threshold: {take_profit*100:.2f}%)"
+                            
+                        if action_needed:
+                            logger.info(f"[{provider_name}] Automated override for {symbol}: {reason}")
+                            from app.models.schemas import TradingDecision, TradeActionEnum
+                            auto_decision = TradingDecision(
+                                action=TradeActionEnum.SELL,
+                                symbol=symbol,
+                                quantity=qty,
+                                confidence=10,
+                                reasoning=f"Automated risk management overriding AI: {reason}",
+                                current_price=current_price
+                            )
+                            auto_decision.ai_provider = provider_name
+                            
+                            trade_result = portfolio_service.execute_trade(db, auto_decision)
+                            if trade_result:
+                                db.add(ActivityLog(
+                                    action=f"{provider_name}_AUTO_LIQUIDATE",
+                                    details=f"[{provider_name}] Liquidated {qty} shares of {symbol} at ${current_price:.2f} - {reason}",
+                                    timestamp=datetime.now(self.est)
+                                ))
+                                db.commit()
+                                symbols_to_remove.append(symbol)
+                                
+                for sym in symbols_to_remove:
+                    if sym in provider_holdings:
+                        del provider_holdings[sym]
 
                 # Allocation limits for this specific provider
                 allocated_limit = provider_info["allocation"]
