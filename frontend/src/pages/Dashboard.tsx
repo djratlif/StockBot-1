@@ -568,10 +568,10 @@ const Dashboard: React.FC = () => {
             <CardContent>
               <Box display="flex" alignItems="center" mb={1} gap={1}>
                 <ShowChart sx={{ color: 'primary.main' }} />
-                <Typography variant="h6">Intraday Realized Gains by Model</Typography>
+                <Typography variant="h6">Intraday Performance by Model</Typography>
               </Box>
               <Typography variant="caption" color="textSecondary" display="block" mb={2}>
-                Cumulative profit from completed sell trades only. Money in open positions is not counted until sold.
+                Live tracking of total portfolio fluctuations, including unrealized gains from open positions.
               </Typography>
               <IntradayPerformanceChart />
             </CardContent>

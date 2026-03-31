@@ -104,7 +104,7 @@ class StrategyProfileEnum(str, Enum):
 
 # Bot Configuration Schemas
 class BotConfigBase(BaseModel):
-    max_daily_trades: int = Field(default=5, ge=1, le=50)
+    max_daily_trades: int = Field(default=5, ge=1, le=500)
     max_position_size: float = Field(default=0.20, ge=0.01, le=1.0)
     
     openai_api_key: Optional[str] = None
@@ -135,7 +135,7 @@ class BotConfigBase(BaseModel):
     portfolio_allocation_amount: float = Field(default=2000.0, ge=0.0)
 
 class BotConfigUpdate(BaseModel):
-    max_daily_trades: Optional[int] = Field(None, ge=1, le=50)
+    max_daily_trades: Optional[int] = Field(None, ge=1, le=500)
     max_position_size: Optional[float] = Field(None, ge=0.01, le=1.0)
     
     openai_api_key: Optional[str] = None

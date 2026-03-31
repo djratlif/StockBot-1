@@ -244,6 +244,8 @@ async def get_intraday_performance(db: Session = Depends(get_db)):
 
         # Anchor realized series at $0 at market open
         anchor = {"time": "09:30:00", "cumulative_pnl": 0.0}
+        total_anchor = {"time": "09:30:00", "total_pnl": 0.0}
+        
         result = {}
         for p in set(list(providers) + list(series.keys())):
             pts = series.get(p, [])
@@ -252,6 +254,13 @@ async def get_intraday_performance(db: Session = Depends(get_db)):
             elif not pts:
                 pts = [anchor]
             result[p] = pts
+            
+            # Anchor total_series as well to prevent missing lines in frontend
+            t_pts = total_series.get(p, [])
+            if t_pts and t_pts[0]["time"] > "09:30:00":
+                total_series[p] = [total_anchor] + t_pts
+            elif not t_pts:
+                total_series[p] = [total_anchor]
 
         return {
             "date": today.strftime("%Y-%m-%d"),

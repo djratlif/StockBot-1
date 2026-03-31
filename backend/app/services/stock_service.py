@@ -24,7 +24,7 @@ class StockService:
             cache_key = f"{symbol}_info"
             cached_data = self._get_cached(cache_key)
             if cached_data:
-                return cached_data
+                return StockInfo(**cached_data)
             
             # Use Alpaca
             stock_info = await alpaca_service.get_stock_info(symbol)

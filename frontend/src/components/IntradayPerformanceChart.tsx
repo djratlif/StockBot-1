@@ -106,7 +106,7 @@ const IntradayPerformanceChart: React.FC = () => {
     const theme = useTheme();
     const [data, setData] = useState<IntradayPerformance | null>(null);
     const [loading, setLoading] = useState(true);
-    const [tab, setTab] = useState(0);
+    const [tab, setTab] = useState(1); // Default to Total P&L (fluctuating)
     const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
     const fetchData = async () => {
