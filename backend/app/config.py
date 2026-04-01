@@ -69,7 +69,7 @@ class Settings(BaseSettings):
         """Convert comma-separated read_only emails to list"""
         if not self.read_only_emails:
             return []
-        return [email.strip() for email in self.read_only_emails.split(',')]
+        return [email.strip().lower() for email in self.read_only_emails.split(',')]
     
     class Config:
         env_file = ".env"
